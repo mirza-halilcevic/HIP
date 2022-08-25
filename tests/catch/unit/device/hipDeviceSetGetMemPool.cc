@@ -23,6 +23,8 @@ THE SOFTWARE.
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 
+
+#if HT_AMD
 TEST_CASE("Unit_hipDeviceSetMemPool_Positive_Basic") {
   const int device = GENERATE(range(0, HipTest::getDeviceCount()));
 
@@ -34,18 +36,24 @@ TEST_CASE("Unit_hipDeviceSetMemPool_Positive_Basic") {
     return;
   }
 
-#if HT_NVIDIA
-  hipMemPool_t mem_pool;
-  HIP_CHECK(hipDeviceGetDefaultMemPool(&mem_pool, device));
-  HIP_CHECK(hipDeviceSetMemPool(device, mem_pool));
-#endif
+// Only enabled for AMD for now, should be enabled for NVIDIA when ROCm 5.3 releases
+  hipMemPoolProps pool_props;
+  pool_props.allocType = hipMemAllocationTypePinned;
+  pool_props.location.id = device;
+  pool_props.location.type = hipMemLocationTypeDevice;
+  hipMemPool_t new_mem_pool = nullptr;
+  HIP_CHECK(hipMemPoolCreate(&new_mem_pool, &pool_props));
+  HIP_CHECK(hipDeviceSetMemPool(device, new_mem_pool));
 
-#if HT_AMD
-// TODO
-#endif
+  hipMemPool_t mem_pool = nullptr;
+  HIP_CHECK(hipDeviceGetMemPool(&mem_pool, device));
+  REQUIRE(mem_pool == new_mem_pool);
+
+  HIP_CHECK(hipMemPoolDestroy(mem_pool));
 }
+#endif
 
-TEST_CASE("Unit_hipDeviceGetMemPool_Positive_Basic") {
+TEST_CASE("Unit_hipDeviceGetMemPool_Positive_Matching_Default_Mem_Pool") {
   const int device = GENERATE(range(0, HipTest::getDeviceCount()));
 
   int mem_pool_support = 0;
@@ -56,17 +64,10 @@ TEST_CASE("Unit_hipDeviceGetMemPool_Positive_Basic") {
     return;
   }
 
-#if HT_NVIDIA
-  hipMemPool_t mem_pool;
+  hipMemPool_t default_mem_pool = nullptr, mem_pool = nullptr;
+  HIP_CHECK(hipDeviceGetDefaultMemPool(&default_mem_pool, device));
   HIP_CHECK(hipDeviceGetMemPool(&mem_pool, device));
-  REQUIRE(mem_pool != nullptr);
-#endif
-
-#if HT_AMD
-// TODO
-// Mempool management APIs seem to still be unsupported on NVIDIA platforms in ROCm 5.2.3 despite
-// appearances
-#endif
+  REQUIRE(mem_pool == default_mem_pool);
 }
 
 TEST_CASE("Unit_hipDeviceSetMemPool_Negative_Parameters") {

@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-add_subdirectory(rtc)
-add_subdirectory(deviceLib)
+# add_subdirectory(rtc)
+# add_subdirectory(deviceLib)
 add_subdirectory(graph)
 add_subdirectory(memory)
 add_subdirectory(stream)
