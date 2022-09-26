@@ -141,8 +141,8 @@ unsigned int GenerateLinearAllocationFlagCombinations(const LinearAllocations al
       // TODO
       return 0;
     case LinearAllocations::hipHostMalloc:
-      // TODO
-      return 0;
+      return GENERATE(hipHostMallocDefault, hipHostMallocPortable, hipHostMallocMapped,
+                      hipHostMallocWriteCombined);
     case LinearAllocations::hipMallocManaged:
       // TODO
       return 1u;
@@ -242,29 +242,82 @@ void MemcpyHostToDeviceShell(F memcpy_func, const hipStream_t kernel_stream = nu
   ArrayFindIfNot(host_allocation.host_ptr(), fill_value + increment_value, element_count);
 }
 
+template <typename F> void MemcpyHostToHostShell(F memcpy_func, const hipStream_t = nullptr) {
+  using LA = LinearAllocations;
+  const auto allocation_size = GENERATE(kPageSize / 2, kPageSize, kPageSize * 2);
+  const auto src_allocation_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  const auto dst_allocation_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  const auto src_allocation_flags = GenerateLinearAllocationFlagCombinations(src_allocation_type);
+  const auto dst_allocation_flags = GenerateLinearAllocationFlagCombinations(dst_allocation_type);
 
-int foo() {
-  int i = GENERATE(1, 2, 3);
-  int j = GENERATE(10, 20, 30);
-  return i + j;
+  LinearAllocationGuard<int> src_allocation(src_allocation_type, allocation_size,
+                                            src_allocation_flags);
+  LinearAllocationGuard<int> dst_allocation(dst_allocation_type, allocation_size,
+                                            dst_allocation_flags);
+
+  const auto element_count = allocation_size / sizeof(*src_allocation.host_ptr());
+  constexpr auto expected_value = 42;
+  std::fill_n(src_allocation.host_ptr(), element_count, expected_value);
+
+  memcpy_func(dst_allocation.host_ptr(), src_allocation.host_ptr(), allocation_size);
+
+  ArrayFindIfNot(dst_allocation.host_ptr(), expected_value, element_count);
 }
 
-TEST_CASE("Blahem") {
+template <typename F>
+void MemcpyDeviceToDeviceShell(F memcpy_func, const hipStream_t kernel_stream = nullptr) {
+  const auto allocation_size = GENERATE(kPageSize / 2, kPageSize, kPageSize * 2);
+  const auto device_count = HipTest::getDeviceCount();
+  // Waiting to figure out what the issue is when devices are different
+  const auto src_device = GENERATE_COPY(0);
+  const auto dst_device = GENERATE_COPY(0);
+
+  HIP_CHECK(hipSetDevice(src_device));
+  LinearAllocationGuard<int> src_allocation(LinearAllocations::hipMalloc, allocation_size);
+  LinearAllocationGuard<int> result(LinearAllocations::hipHostMalloc, allocation_size,
+                                    hipHostMallocPortable);
+  HIP_CHECK(hipSetDevice(dst_device));
+  LinearAllocationGuard<int> dst_allocation(LinearAllocations::hipMalloc, allocation_size);
+
+  const auto element_count = allocation_size / sizeof(*src_allocation.ptr());
+  constexpr auto thread_count = 1024;
+  const auto block_count = element_count / thread_count + 1;
+  constexpr int expected_value = 42;
+  // Consider situations when this is dst_device instead
+  HIP_CHECK(hipSetDevice(src_device));
+  VectorSet<<<block_count, thread_count, 0, kernel_stream>>>(src_allocation.ptr(), expected_value,
+                                                             element_count);
+  HIP_CHECK(hipGetLastError());
+
+  memcpy_func(dst_allocation.ptr(), src_allocation.ptr(), allocation_size);
+  HIP_CHECK(
+      hipMemcpy(result.host_ptr(), dst_allocation.ptr(), allocation_size, hipMemcpyDeviceToHost));
+
+  ArrayFindIfNot(result.host_ptr(), expected_value, element_count);
+}
+
+TEST_CASE("D2D_Fail") {
+  // Adapted from hipMemcpy.cc:Unit_hipMemcpy_H2H-H2D-D2H-H2PinMem:H2D-D2D-D2H-PeerGPU
+  constexpr auto num_elements = 1024;
+  constexpr auto size = num_elements * sizeof(int);
   HIP_CHECK(hipSetDevice(0));
-  int *p0;
-  size_t size = 1024 * sizeof(*p0);
+  int* h = reinterpret_cast<int*>(malloc(size));
+  std::fill_n(h, num_elements, 42);
+  int* r = reinterpret_cast<int*>(malloc(size));
+  std::fill_n(r, num_elements, 0);
+  REQUIRE(0 == r[0]);
+  int* p0 = nullptr;
   HIP_CHECK(hipMalloc(&p0, size));
+
   HIP_CHECK(hipSetDevice(1));
-  int *p1;
+  int* p1 = nullptr;
   HIP_CHECK(hipMalloc(&p1, size));
-  HIP_CHECK(hipSetDevice(0));
-  VectorSet<<<1, 1024>>>(p0, 42, 1024);
-  HIP_CHECK(hipSetDevice(1));
+
+  HIP_CHECK(hipMemcpy(p0, h, size, hipMemcpyDefault));
   HIP_CHECK(hipMemcpy(p1, p0, size, hipMemcpyDeviceToDevice));
-  int *h;
-  HIP_CHECK(hipHostMalloc(&h, size, 0));
-  HIP_CHECK(hipMemcpy(h, p1, size, hipMemcpyDeviceToHost));
-  ArrayFindIfNot(h, 42, 1024);
+  HIP_CHECK(hipMemcpy(r, p1, size, hipMemcpyDeviceToHost));
+
+  REQUIRE(42 == r[0]);
 }
 
 // A memory copy will succeed even if it is issued to a stream that is not associated to the current
@@ -296,6 +349,34 @@ TEST_CASE("Unit_hipMemcpy_Basic") {
   SECTION("Host to device with default kind") {
     MemcpyHostToDeviceShell([](void* dst, void* src, size_t count) {
       HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDefault));
+    });
+  }
+
+  SECTION("Host to host") {
+    MemcpyHostToHostShell([](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyHostToHost));
+      HIP_CHECK(hipStreamQuery(nullptr));
+    });
+  }
+
+  SECTION("Host to host with default kind") {
+    MemcpyHostToHostShell([](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDefault));
+      HIP_CHECK(hipStreamQuery(nullptr));
+    });
+  }
+
+  SECTION("Device to device") {
+    MemcpyDeviceToDeviceShell([](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDeviceToDevice));
+      HIP_CHECK(hipStreamQuery(nullptr));
+    });
+  }
+
+  SECTION("Device to device with default kind") {
+    MemcpyDeviceToDeviceShell([](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDefault));
+      HIP_CHECK(hipStreamQuery(nullptr));
     });
   }
 }
@@ -337,6 +418,38 @@ TEST_CASE("Unit_hipMemcpyAsync_Basic") {
       HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDefault, stream));
     };
     MemcpyHostToDeviceShell(f, stream);
+  }
+
+  SECTION("Host to host") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyHostToHost, stream));
+      HIP_CHECK(hipStreamSynchronize(stream));
+    };
+    MemcpyHostToHostShell(f, stream);
+  }
+
+  SECTION("Host to host with default kind") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDefault, stream));
+      HIP_CHECK(hipStreamSynchronize(stream));
+    };
+    MemcpyHostToHostShell(f, stream);
+  }
+
+  SECTION("Device to device") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDeviceToDevice, stream));
+      HIP_CHECK(hipStreamSynchronize(stream));
+    };
+    MemcpyDeviceToDeviceShell(f, stream);
+  }
+
+  SECTION("Device to device with default kind") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDefault, stream));
+      HIP_CHECK(hipStreamSynchronize(stream));
+    };
+    MemcpyDeviceToDeviceShell(f, stream);
   }
 }
 /*------------------------------------------------------------------------------------------------*/
@@ -380,6 +493,38 @@ TEST_CASE("Unit_hipMemcpyWithStream_Basic") {
     };
     MemcpyHostToDeviceShell(f, stream);
   }
+
+  SECTION("Host to host") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyHostToHost, stream));
+      HIP_CHECK(hipStreamQuery(stream));
+    };
+    MemcpyHostToHostShell(f, stream);
+  }
+
+  SECTION("Host to host with default kind") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDefault, stream));
+      HIP_CHECK(hipStreamQuery(stream));
+    };
+    MemcpyHostToHostShell(f, stream);
+  }
+
+  SECTION("Device to device") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDeviceToDevice, stream));
+      HIP_CHECK(hipStreamQuery(stream));
+    };
+    MemcpyDeviceToDeviceShell(f, stream);
+  }
+
+  SECTION("Device to device with default kind") {
+    const auto f = [stream](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDefault, stream));
+      HIP_CHECK(hipStreamQuery(stream));
+    };
+    MemcpyDeviceToDeviceShell(f, stream);
+  }
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -408,32 +553,12 @@ TEST_CASE("Unit_hipMemcpyHtoD_Basic") {
 /*------------------------------------------------------------------------------------------------*/
 // hipMemcpyDtoD
 TEST_CASE("Unit_hipMemcpyDtoD_Basic") {
-  const auto allocation_size = GENERATE(kPageSize / 2, kPageSize, kPageSize * 2);
-  const auto device_count = HipTest::getDeviceCount();
-  const auto src_device = GENERATE_COPY(0);
-  const auto dst_device = GENERATE_COPY(1);
-
-  HIP_CHECK(hipSetDevice(src_device));
-  LinearAllocationGuard<int> src_allocation(LinearAllocations::hipMalloc, allocation_size);
-  HIP_CHECK(hipSetDevice(dst_device));
-  LinearAllocationGuard<int> dst_allocation(LinearAllocations::hipMalloc, allocation_size);
-  HIP_CHECK(hipSetDevice(src_device));
-  LinearAllocationGuard<int> result(LinearAllocations::hipHostMalloc, allocation_size);
-
-  const auto element_count = allocation_size / sizeof(*src_allocation.ptr());
-  constexpr auto thread_count = 1024;
-  const auto block_count = element_count / thread_count + 1;
-  constexpr int expected_value = 42;
-  VectorSet<<<block_count, thread_count>>>(src_allocation.ptr(), expected_value, element_count);
-  HIP_CHECK(hipGetLastError());
-
-  HIP_CHECK(hipSetDevice(dst_device));
-  HIP_CHECK(hipMemcpy(dst_allocation.ptr(), src_allocation.ptr(), allocation_size, hipMemcpyDeviceToDevice));
-
-  HIP_CHECK(
-      hipMemcpy(result.host_ptr(), dst_allocation.ptr(), allocation_size, hipMemcpyDeviceToHost));
-
-  ArrayFindIfNot(result.host_ptr(), expected_value, element_count);
+  SECTION("Device to device") {
+    MemcpyDeviceToDeviceShell([](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyDtoD(dst, src, count));
+      HIP_CHECK(hipStreamQuery(nullptr));
+    });
+  }
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -463,5 +588,21 @@ TEST_CASE("Unit_hipMemcpyHtoDAsync_Basic") {
     HIP_CHECK(hipMemcpyHtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst), src, count, stream));
   };
   MemcpyHostToDeviceShell(f, stream_guard.stream());
+}
+/*------------------------------------------------------------------------------------------------*/
+
+
+/*------------------------------------------------------------------------------------------------*/
+// hipMemcpyDtoDAsync
+TEST_CASE("Unit_hipMemcpyDtoDAsync_Basic") {
+  const auto stream_type = GENERATE(Streams::nullstream, Streams::perThread, Streams::created);
+  const StreamGuard stream_guard(stream_type);
+
+  SECTION("Device to device") {
+    MemcpyDeviceToDeviceShell([stream = stream_guard.stream()](void* dst, void* src, size_t count) {
+      HIP_CHECK(hipMemcpyDtoDAsync(dst, src, count, stream));
+      HIP_CHECK(hipStreamSynchronize(stream));
+    });
+  }
 }
 /*------------------------------------------------------------------------------------------------*/
