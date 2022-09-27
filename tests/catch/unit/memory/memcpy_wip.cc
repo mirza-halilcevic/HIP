@@ -527,7 +527,7 @@ TEST_CASE("Unit_hipMemcpy_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpy(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
                                 static_cast<hipMemcpyKind>(-1)),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
   }
 
@@ -541,7 +541,7 @@ TEST_CASE("Unit_hipMemcpy_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpy(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
                                 static_cast<hipMemcpyKind>(-1)),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
   }
 
@@ -555,7 +555,7 @@ TEST_CASE("Unit_hipMemcpy_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(
           hipMemcpy(dst_alloc.ptr(), src_alloc.ptr(), kPageSize, static_cast<hipMemcpyKind>(-1)),
-          hipErrorInvalidValue);
+          hipErrorInvalidMemcpyDirection);
     }
   }
 
@@ -569,7 +569,7 @@ TEST_CASE("Unit_hipMemcpy_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(
           hipMemcpy(dst_alloc.ptr(), src_alloc.ptr(), kPageSize, static_cast<hipMemcpyKind>(-1)),
-          hipErrorInvalidValue);
+          hipErrorInvalidMemcpyDirection);
     }
   }
 }
@@ -645,7 +645,7 @@ TEST_CASE("Unit_hipMemcpyAsync_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyAsync(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
                                      static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -666,7 +666,7 @@ TEST_CASE("Unit_hipMemcpyAsync_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyAsync(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
                                      static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -687,7 +687,7 @@ TEST_CASE("Unit_hipMemcpyAsync_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyAsync(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
                                      static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -709,7 +709,7 @@ TEST_CASE("Unit_hipMemcpyAsync_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyAsync(src_alloc.ptr(), dst_alloc.ptr(), kPageSize,
                                      static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -758,7 +758,7 @@ TEST_CASE("Unit_hipMemcpyWithStream_Synchronization_Behavior") {
     return;
 #endif
     MemcpyDtoDSyncBehavior(
-        std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyDeviceToDevice, nullptr), false);
+        std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyDeviceToDevice, nullptr), true);
   }
 
   SECTION("Host memory to host memory") {
@@ -781,7 +781,7 @@ TEST_CASE("Unit_hipMemcpyWithStream_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyWithStream(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
                                           static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -803,7 +803,7 @@ TEST_CASE("Unit_hipMemcpyWithStream_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyWithStream(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
                                           static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -825,7 +825,7 @@ TEST_CASE("Unit_hipMemcpyWithStream_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyWithStream(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
                                           static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
@@ -847,7 +847,7 @@ TEST_CASE("Unit_hipMemcpyWithStream_Negative_Parameters") {
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpyWithStream(src_alloc.ptr(), dst_alloc.ptr(), kPageSize,
                                           static_cast<hipMemcpyKind>(-1), nullptr),
-                      hipErrorInvalidValue);
+                      hipErrorInvalidMemcpyDirection);
     }
 
     SECTION("Invalid stream") {
