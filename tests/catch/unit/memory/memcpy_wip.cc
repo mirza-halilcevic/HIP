@@ -892,7 +892,7 @@ TEST_CASE("Unit_hipMemcpyDtoH_Negative_Parameters") {
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
   MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoH, _1, _2, _3), host_alloc.ptr(),
-                            device_alloc.ptr(), kPageSize);
+                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -920,8 +920,9 @@ TEST_CASE("Unit_hipMemcpyHtoD_Negative_Parameters") {
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoD, _1, _2, _3), device_alloc.ptr(),
-                            host_alloc.ptr(), kPageSize);
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoD, _1, _2, _3),
+                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), host_alloc.ptr(),
+                            kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -960,8 +961,9 @@ TEST_CASE("Unit_hipMemcpyDtoD_Negative_Parameters") {
   LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoD, _1, _2, _3), dst_alloc.ptr(), src_alloc.ptr(),
-                            kPageSize);
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoD, _1, _2, _3),
+                            reinterpret_cast<hipDeviceptr_t>(dst_alloc.ptr()),
+                            reinterpret_cast<hipDeviceptr_t>(src_alloc.ptr()), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -1004,7 +1006,7 @@ TEST_CASE("Unit_hipMemcpyDtoHAsync_Negative_Parameters") {
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
   MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoHAsync, _1, _2, _3, nullptr), host_alloc.ptr(),
-                            device_alloc.ptr(), kPageSize);
+                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -1042,8 +1044,9 @@ TEST_CASE("Unit_hipMemcpyHtoDAsync_Negative_Parameters") {
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoDAsync, _1, _2, _3, nullptr), device_alloc.ptr(),
-                            host_alloc.ptr(), kPageSize);
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoDAsync, _1, _2, _3, nullptr),
+                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), host_alloc.ptr(),
+                            kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -1057,7 +1060,8 @@ TEST_CASE("Unit_hipMemcpyDtoDAsync_Basic") {
   SECTION("Device to device") {
     MemcpyDeviceToDeviceShell(
         [stream = stream_guard.stream()](void* dst, void* src, size_t count) {
-          return hipMemcpyDtoDAsync(dst, src, count, stream);
+          return hipMemcpyDtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst),
+                                    reinterpret_cast<hipDeviceptr_t>(src), count, stream);
         },
         true);
   }
@@ -1077,7 +1081,8 @@ TEST_CASE("Unit_hipMemcpyDtoDAsync_Negative_Parameters") {
   LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoDAsync, _1, _2, _3, nullptr), dst_alloc.ptr(),
-                            src_alloc.ptr(), kPageSize);
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoDAsync, _1, _2, _3, nullptr),
+                            reinterpret_cast<hipDeviceptr_t>(dst_alloc.ptr()),
+                            reinterpret_cast<hipDeviceptr_t>(src_alloc.ptr()), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
