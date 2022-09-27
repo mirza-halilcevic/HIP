@@ -437,15 +437,8 @@ void MemcpyHtoHSyncBehavior(F memcpy_func, const bool should_sync,
 }
 
 template <typename F> void MemcpyCommonNegativeTests(F f, void* dst, void* src, size_t count) {
-  SECTION("dst == nullptr") {
-    HIP_CHECK_ERROR(f(nullptr, src, kPageSize, hipMemcpyHostToDevice), hipErrorInvalidValue);
-  }
-  SECTION("src == nullptr") {
-    HIP_CHECK_ERROR(f(dst, nullptr, kPageSize, hipMemcpyHostToDevice), hipErrorInvalidValue);
-  }
-  SECTION("Negative size") {
-    HIP_CHECK_ERROR(hipMemcpy(dst, src, -1, hipMemcpyHostToDevice), hipErrorInvalidValue);
-  }
+  SECTION("dst == nullptr") { HIP_CHECK_ERROR(f(nullptr, src, count), hipErrorInvalidValue); }
+  SECTION("src == nullptr") { HIP_CHECK_ERROR(f(dst, nullptr, count), hipErrorInvalidValue); }
 }
 
 TEST_CASE("D2D_Fail") {
@@ -891,8 +884,11 @@ TEST_CASE("Unit_hipMemcpyDtoH_Negative_Parameters") {
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoH, _1, _2, _3), host_alloc.ptr(),
-                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), kPageSize);
+  MemcpyCommonNegativeTests(
+      [](void* dst, void* src, size_t count) {
+        return hipMemcpyDtoH(dst, reinterpret_cast<hipDeviceptr_t>(src), count);
+      },
+      host_alloc.ptr(), device_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -920,9 +916,11 @@ TEST_CASE("Unit_hipMemcpyHtoD_Negative_Parameters") {
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoD, _1, _2, _3),
-                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), host_alloc.ptr(),
-                            kPageSize);
+  MemcpyCommonNegativeTests(
+      [](void* dst, void* src, size_t count) {
+        return hipMemcpyHtoD(reinterpret_cast<hipDeviceptr_t>(dst), src, count);
+      },
+      device_alloc.ptr(), host_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -961,9 +959,12 @@ TEST_CASE("Unit_hipMemcpyDtoD_Negative_Parameters") {
   LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoD, _1, _2, _3),
-                            reinterpret_cast<hipDeviceptr_t>(dst_alloc.ptr()),
-                            reinterpret_cast<hipDeviceptr_t>(src_alloc.ptr()), kPageSize);
+  MemcpyCommonNegativeTests(
+      [](void* dst, void* src, size_t count) {
+        return hipMemcpyDtoD(reinterpret_cast<hipDeviceptr_t>(dst),
+                             reinterpret_cast<hipDeviceptr_t>(src), count);
+      },
+      dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -1005,8 +1006,11 @@ TEST_CASE("Unit_hipMemcpyDtoHAsync_Negative_Parameters") {
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoHAsync, _1, _2, _3, nullptr), host_alloc.ptr(),
-                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), kPageSize);
+  MemcpyCommonNegativeTests(
+      [](void* dst, void* src, size_t count) {
+        return hipMemcpyDtoHAsync(dst, reinterpret_cast<hipDeviceptr_t>(src), count, nullptr);
+      },
+      host_alloc.ptr(), device_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -1044,9 +1048,11 @@ TEST_CASE("Unit_hipMemcpyHtoDAsync_Negative_Parameters") {
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoDAsync, _1, _2, _3, nullptr),
-                            reinterpret_cast<hipDeviceptr_t>(device_alloc.ptr()), host_alloc.ptr(),
-                            kPageSize);
+  MemcpyCommonNegativeTests(
+      [](void* dst, void* src, size_t count) {
+        return hipMemcpyHtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst), src, count, nullptr);
+      },
+      device_alloc.ptr(), host_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -1081,8 +1087,11 @@ TEST_CASE("Unit_hipMemcpyDtoDAsync_Negative_Parameters") {
   LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
 
-  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoDAsync, _1, _2, _3, nullptr),
-                            reinterpret_cast<hipDeviceptr_t>(dst_alloc.ptr()),
-                            reinterpret_cast<hipDeviceptr_t>(src_alloc.ptr()), kPageSize);
+  MemcpyCommonNegativeTests(
+      [](void* dst, void* src, size_t count) {
+        return hipMemcpyDtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst),
+                                  reinterpret_cast<hipDeviceptr_t>(src), count, nullptr);
+      },
+      dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
