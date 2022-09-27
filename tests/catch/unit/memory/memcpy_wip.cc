@@ -313,49 +313,65 @@ void MemcpyDeviceToDeviceShell(F memcpy_func, const hipStream_t kernel_stream = 
 }
 
 template <typename F>
-void MemcpyHtoDSyncBehavior(F memcpy_func, const hipStream_t kernel_stream = nullptr) {
+void MemcpySyncBehaviorCheck(F memcpy_func, const bool should_sync,
+                             const hipStream_t kernel_stream) {
+  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
+  HIP_CHECK(memcpy_func());
+  if (should_sync) {
+    HIP_CHECK(hipStreamQuery(kernel_stream));
+  } else {
+    HIP_CHECK_ERROR(hipStreamQuery(kernel_stream), hipErrorNotReady);
+  }
+}
+
+template <typename F>
+void MemcpyHtoDSyncBehavior(F memcpy_func, const bool should_sync,
+                            const hipStream_t kernel_stream = nullptr) {
   using LA = LinearAllocs;
   const auto host_alloc_type = GENERATE(LA::malloc, LA::hipHostMalloc);
   LinearAllocGuard<int> host_alloc(host_alloc_type, kPageSize);
   LinearAllocGuard<int> device_alloc(LA::hipMalloc, kPageSize);
-  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
-  memcpy_func(device_alloc.ptr(), host_alloc.host_ptr(), kPageSize);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, device_alloc.ptr(), host_alloc.ptr(), kPageSize),
+                          should_sync, kernel_stream);
 }
 
 template <typename F>
-void MemcpyDtoHPageableSyncBehavior(F memcpy_func, const hipStream_t kernel_stream = nullptr) {
+void MemcpyDtoHPageableSyncBehavior(F memcpy_func, const bool should_sync,
+                                    const hipStream_t kernel_stream = nullptr) {
   LinearAllocGuard<int> host_alloc(LinearAllocs::malloc, kPageSize);
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
-  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
-  memcpy_func(device_alloc.ptr(), host_alloc.host_ptr(), kPageSize);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), device_alloc.ptr(), kPageSize),
+                          should_sync, kernel_stream);
 }
 
 template <typename F>
-void MemcpyDtoHPinnedSyncBehavior(F memcpy_func, const hipStream_t kernel_stream = nullptr) {
+void MemcpyDtoHPinnedSyncBehavior(F memcpy_func, const bool should_sync,
+                                  const hipStream_t kernel_stream = nullptr) {
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
   LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
-  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
-  memcpy_func(host_alloc.host_ptr(), device_alloc.ptr(), kPageSize);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), device_alloc.ptr(), kPageSize),
+                          should_sync, kernel_stream);
 }
 
 template <typename F>
-void MemcpyDtoDSyncBehavior(F memcpy_func, const hipStream_t kernel_stream = nullptr) {
+void MemcpyDtoDSyncBehavior(F memcpy_func, const bool should_sync, const hipStream_t kernel_stream = nullptr) {
   LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
   LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
-  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
-  memcpy_func(dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, dst_alloc.ptr(), src_alloc.ptr(), kPageSize),
+                          should_sync, kernel_stream);
 }
 
 template <typename F>
-void MemcpyHtoHSyncBehavior(F memcpy_func, const hipStream_t kernel_stream = nullptr) {
+void MemcpyHtoHSyncBehavior(F memcpy_func, const bool should_sync,
+                            const hipStream_t kernel_stream = nullptr) {
   using LA = LinearAllocs;
   const auto src_alloc_type = GENERATE(LA::malloc, LA::hipHostMalloc);
   const auto dst_alloc_type = GENERATE(LA::malloc, LA::hipHostMalloc);
 
   LinearAllocGuard<int> src_alloc(src_alloc_type, kPageSize);
   LinearAllocGuard<int> dst_alloc(dst_alloc_type, kPageSize);
-  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
-  memcpy_func(dst_alloc.host_ptr(), src_alloc.host_ptr(), kPageSize);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, dst_alloc.ptr(), src_alloc.ptr(), kPageSize),
+                          should_sync, kernel_stream);
 }
 
 template <typename F> void MemcpyCommonNegativeTests(F f, void* dst, void* src, size_t count) {
@@ -435,6 +451,7 @@ TEST_CASE("Unit_hipMemcpy_Basic") {
 }
 
 TEST_CASE("Unit_hipMemcpy_Synchronization_Behavior") {
+  using namespace std::placeholders;
   HIP_CHECK(hipDeviceSynchronize());
 
   SECTION("Host memory to device memory") {
@@ -444,21 +461,15 @@ TEST_CASE("Unit_hipMemcpy_Synchronization_Behavior") {
     // not have completed.
     // For transfers from pinned host memory to device memory, the function is synchronous with
     // respect to the host
-    MemcpyHtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyHostToDevice));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
-  }
+    MemcpyHtoDSyncBehavior(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyHostToDevice), true);  
+    }
 
   // For transfers from device to either pageable or pinned host memory, the function returns only
   // once the copy has completed
   SECTION("Device memory to host memory") {
-    const auto f = [](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDeviceToHost));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    };
-    MemcpyDtoHPageableSyncBehavior(f);
-    MemcpyDtoHPinnedSyncBehavior(f);
+    const auto f = std::bind(hipMemcpy, _1, _2, _3, hipMemcpyDeviceToHost);
+    MemcpyDtoHPageableSyncBehavior(f, true);
+    MemcpyDtoHPinnedSyncBehavior(f, true);
   }
 
   // For transfers from device memory to device memory, no host-side synchronization is performed.
@@ -470,19 +481,13 @@ TEST_CASE("Unit_hipMemcpy_Synchronization_Behavior") {
         "EXSWCPHIPT-127 - Memcpy from device to device memory behavior differs on AMD and Nvidia");
     return;
 #endif
-    MemcpyDtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDeviceToDevice));
-      HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-    });
+    MemcpyDtoDSyncBehavior(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyDeviceToDevice), false);
   }
 
   // For transfers from any host memory to any host memory, the function is fully synchronous with
   // respect to the host
   SECTION("Host memory to host memory") {
-    MemcpyHtoHSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyHostToHost, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
+    MemcpyHtoHSyncBehavior(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyHostToHost), true);
   }
 }
 
@@ -623,6 +628,7 @@ TEST_CASE("Unit_hipMemcpyAsync_Basic") {
 
 
 TEST_CASE("Unit_hipMemcpyAsync_Synchronization_Behavior") {
+  using namespace std::placeholders;
   HIP_CHECK(hipDeviceSynchronize());
 
   SECTION("Host memory to device memory") {
@@ -634,44 +640,29 @@ TEST_CASE("Unit_hipMemcpyAsync_Synchronization_Behavior") {
         "Nvidia");
     return;
 #endif
-    MemcpyHtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyHostToDevice, nullptr));
-      HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-    });
-  }
+    MemcpyHtoDSyncBehavior(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyHostToDevice, nullptr), false);
+      }
 
   // For transfers from device memory to pageable host memory, the function will return only once
   // the copy has completed
   SECTION("Device memory to pageable host memory") {
-    MemcpyDtoHPageableSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDeviceToHost, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
+    MemcpyDtoHPageableSyncBehavior(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyDeviceToHost, nullptr), true);
   }
 
   // For all other transfers, the function is fully asynchronous. If pageable memory must first be
   // staged to pinned memory, this will be handled asynchronously with a worker thread
   SECTION("Device memory to pinned host memory") {
-    MemcpyDtoHPinnedSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDeviceToHost, nullptr));
-      HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-    });
+    MemcpyDtoHPinnedSyncBehavior(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyDeviceToHost, nullptr), false);
   }
 
   SECTION("Device memory to device memory") {
-    MemcpyDtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyDeviceToDevice, nullptr));
-      HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-    });
+    MemcpyDtoDSyncBehavior(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyDeviceToDevice, nullptr), false);
   }
 
   // For transfers from any host memory to any host memory, the function is fully synchronous with
   // respect to the host
   SECTION("Host memory to host memory") {
-    MemcpyHtoHSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyHostToHost, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
+    MemcpyHtoHSyncBehavior(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyHostToHost, nullptr), true);
   }
 }
 
@@ -816,22 +807,17 @@ TEST_CASE("Unit_hipMemcpyWithStream_Basic") {
 }
 
 TEST_CASE("Unit_hipMemcpyWithStream_Synchronization_Behavior") {
+  using namespace std::placeholders;
   HIP_CHECK(hipDeviceSynchronize());
 
   SECTION("Host memory to device memory") {
-    MemcpyHtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyHostToDevice, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
-  }
+    MemcpyHtoDSyncBehavior(std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyHostToDevice, nullptr), true); 
+     }
 
   SECTION("Device memory to host memory") {
-    const auto f = [](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDeviceToHost, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    };
-    MemcpyDtoHPageableSyncBehavior(f);
-    MemcpyDtoHPinnedSyncBehavior(f);
+    const auto f = std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyDeviceToHost, nullptr);
+    MemcpyDtoHPageableSyncBehavior(f, true);
+    MemcpyDtoHPinnedSyncBehavior(f, true);
   }
 
   SECTION("Device memory to device memory") {
@@ -842,17 +828,11 @@ TEST_CASE("Unit_hipMemcpyWithStream_Synchronization_Behavior") {
         "EXSWCPHIPT-127 - Memcpy from device to device memory behavior differs on AMD and Nvidia");
     return;
 #endif
-    MemcpyDtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDeviceToDevice, nullptr));
-      HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-    });
+    MemcpyDtoDSyncBehavior(std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyDeviceToDevice, nullptr), false);
   }
 
   SECTION("Host memory to host memory") {
-    MemcpyHtoHSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyHostToHost, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
+    MemcpyHtoHSyncBehavior(std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyHostToHost, nullptr), true);
   }
 }
 
@@ -961,11 +941,10 @@ TEST_CASE("Unit_hipMemcpyDtoH_Basic") {
 
 TEST_CASE("Unit_hipMemcpyDtoH_Synchronization_Behavior") {
   const auto f = [](void* dst, void* src, size_t count) {
-    HIP_CHECK(hipMemcpyDtoH(dst, reinterpret_cast<hipDeviceptr_t>(src), count));
-    HIP_CHECK(hipStreamQuery(nullptr));
+    return hipMemcpyDtoH(dst, reinterpret_cast<hipDeviceptr_t>(src), count);
   };
-  MemcpyDtoHPageableSyncBehavior(f);
-  MemcpyDtoHPinnedSyncBehavior(f);
+  MemcpyDtoHPageableSyncBehavior(f, true);
+  MemcpyDtoHPinnedSyncBehavior(f, true);
 }
 
 TEST_CASE("Unit_hipMemcpyDtoH_Negative_Parameters") {
@@ -989,9 +968,8 @@ TEST_CASE("Unit_hipMemcpyHtoD_Basic") {
 
 TEST_CASE("Unit_hipMemcpyHtoD_Synchronization_Behavior") {
   MemcpyHtoDSyncBehavior([](void* dst, void* src, size_t count) {
-    HIP_CHECK(hipMemcpyHtoD(reinterpret_cast<hipDeviceptr_t>(dst), src, count));
-    HIP_CHECK(hipStreamQuery(nullptr));
-  });
+    return hipMemcpyHtoD(reinterpret_cast<hipDeviceptr_t>(dst), src, count);
+  }, true);
 }
 
 TEST_CASE("Unit_hipMemcpyHtoD_Negative_Parameters") {
@@ -1026,10 +1004,9 @@ TEST_CASE("Unit_hipMemcpyDtoD_Synchronization_Behavior") {
   return;
 #endif
   MemcpyDtoDSyncBehavior([](void* dst, void* src, size_t count) {
-    HIP_CHECK(hipMemcpyDtoD(reinterpret_cast<hipDeviceptr_t>(dst),
-                            reinterpret_cast<hipDeviceptr_t>(src), count));
-    HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-  });
+    return hipMemcpyDtoD(reinterpret_cast<hipDeviceptr_t>(dst),
+                            reinterpret_cast<hipDeviceptr_t>(src), count);
+  }, false);
 }
 
 TEST_CASE("Unit_hipMemcpyDtoD_Negative_Parameters") {
@@ -1061,16 +1038,14 @@ TEST_CASE("Unit_hipMemcpyDtoHAsync_Synchronization_Behavior") {
 
   SECTION("Device memory to pageable host memory") {
     MemcpyDtoHPageableSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyDtoHAsync(dst, reinterpret_cast<hipDeviceptr_t>(src), count, nullptr));
-      HIP_CHECK(hipStreamQuery(nullptr));
-    });
+      return hipMemcpyDtoHAsync(dst, reinterpret_cast<hipDeviceptr_t>(src), count, nullptr);
+    }, true);
   }
 
   SECTION("Device memory to pinned host memory") {
     MemcpyDtoHPinnedSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyDtoHAsync(dst, reinterpret_cast<hipDeviceptr_t>(src), count, nullptr));
-      HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-    });
+      return hipMemcpyDtoHAsync(dst, reinterpret_cast<hipDeviceptr_t>(src), count, nullptr);
+    }, false);
   }
 }
 
@@ -1107,9 +1082,8 @@ TEST_CASE("Unit_hipMemcpyHtoDAsync_Synchronization_Behavior") {
   return;
 #endif
   MemcpyHtoDSyncBehavior([](void* dst, void* src, size_t count) {
-    HIP_CHECK(hipMemcpyHtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst), src, count, nullptr));
-    HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-  });
+    return hipMemcpyHtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst), src, count, nullptr);
+  }, false);
 }
 
 TEST_CASE("Unit_hipMemcpyHtoDAsync_Negative_Parameters") {
@@ -1139,10 +1113,9 @@ TEST_CASE("Unit_hipMemcpyDtoDAsync_Basic") {
 
 TEST_CASE("Unit_hipMemcpyDtoDAsync_Synchronization_Behavior") {
   MemcpyDtoDSyncBehavior([](void* dst, void* src, size_t count) {
-    HIP_CHECK(hipMemcpyDtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst),
-                                 reinterpret_cast<hipDeviceptr_t>(src), count, nullptr));
-    HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-  });
+    return hipMemcpyDtoDAsync(reinterpret_cast<hipDeviceptr_t>(dst),
+                                 reinterpret_cast<hipDeviceptr_t>(src), count, nullptr);
+  }, false);
 }
 
 TEST_CASE("Unit_hipMemcpyDtoDAsync_Negative_Parameters") {
