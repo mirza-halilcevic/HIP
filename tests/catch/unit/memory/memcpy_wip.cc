@@ -358,6 +358,18 @@ void MemcpyHtoHSyncBehavior(F memcpy_func, const hipStream_t kernel_stream = nul
   memcpy_func(dst_alloc.host_ptr(), src_alloc.host_ptr(), kPageSize);
 }
 
+template <typename F> void MemcpyCommonNegativeTests(F f, void* dst, void* src, size_t count) {
+  SECTION("dst == nullptr") {
+    HIP_CHECK_ERROR(f(nullptr, src, kPageSize, hipMemcpyHostToDevice), hipErrorInvalidValue);
+  }
+  SECTION("src == nullptr") {
+    HIP_CHECK_ERROR(f(dst, nullptr, kPageSize, hipMemcpyHostToDevice), hipErrorInvalidValue);
+  }
+  SECTION("Negative size") {
+    HIP_CHECK_ERROR(hipMemcpy(dst, src, -1, hipMemcpyHostToDevice), hipErrorInvalidValue);
+  }
+}
+
 TEST_CASE("D2D_Fail") {
   // Adapted from hipMemcpy.cc:Unit_hipMemcpy_H2H-H2D-D2H-H2PinMem:H2D-D2D-D2H-PeerGPU
   constexpr auto num_elements = 1024;
@@ -422,7 +434,6 @@ TEST_CASE("Unit_hipMemcpy_Basic") {
   }
 }
 
-
 TEST_CASE("Unit_hipMemcpy_Synchronization_Behavior") {
   HIP_CHECK(hipDeviceSynchronize());
 
@@ -472,6 +483,67 @@ TEST_CASE("Unit_hipMemcpy_Synchronization_Behavior") {
       HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyHostToHost, nullptr));
       HIP_CHECK(hipStreamQuery(nullptr));
     });
+  }
+}
+
+
+TEST_CASE("Unit_hipMemcpy_Negative_Parameters") {
+  using namespace std::placeholders;
+
+  SECTION("Host to device") {
+    LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyHostToDevice),
+                              device_alloc.ptr(), host_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpy(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
+                                static_cast<hipMemcpyKind>(-1)),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Device to host") {
+    LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyDeviceToHost),
+                              host_alloc.ptr(), device_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpy(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
+                                static_cast<hipMemcpyKind>(-1)),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Host to host") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyHostToHost),
+                              dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(
+          hipMemcpy(dst_alloc.ptr(), src_alloc.ptr(), kPageSize, static_cast<hipMemcpyKind>(-1)),
+          hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Device to device") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpy, _1, _2, _3, hipMemcpyDeviceToDevice),
+                              dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(
+          hipMemcpy(dst_alloc.ptr(), src_alloc.ptr(), kPageSize, static_cast<hipMemcpyKind>(-1)),
+          hipErrorInvalidValue);
+    }
   }
 }
 /*------------------------------------------------------------------------------------------------*/
@@ -602,6 +674,95 @@ TEST_CASE("Unit_hipMemcpyAsync_Synchronization_Behavior") {
     });
   }
 }
+
+TEST_CASE("Unit_hipMemcpyAsync_Negative_Parameters") {
+  using namespace std::placeholders;
+
+  SECTION("Host to device") {
+    LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyHostToDevice, nullptr),
+                              device_alloc.ptr(), host_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyAsync(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
+                                     static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyAsync(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
+                                     hipMemcpyHostToDevice, stream),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Device to host") {
+    LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyDeviceToHost, nullptr),
+                              host_alloc.ptr(), device_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyAsync(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
+                                     static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyAsync(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
+                                     hipMemcpyDeviceToHost, stream),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Host to host") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyHostToHost, nullptr),
+                              dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyAsync(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
+                                     static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(
+          hipMemcpyAsync(dst_alloc.ptr(), src_alloc.ptr(), kPageSize, hipMemcpyHostToHost, stream),
+          hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Device to device") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(
+        std::bind(hipMemcpyAsync, _1, _2, _3, hipMemcpyDeviceToDevice, nullptr), dst_alloc.ptr(),
+        src_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyAsync(src_alloc.ptr(), dst_alloc.ptr(), kPageSize,
+                                     static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyAsync(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
+                                     hipMemcpyDeviceToDevice, stream),
+                      hipErrorInvalidValue);
+    }
+  }
+}
 /*------------------------------------------------------------------------------------------------*/
 
 
@@ -659,14 +820,14 @@ TEST_CASE("Unit_hipMemcpyWithStream_Synchronization_Behavior") {
 
   SECTION("Host memory to device memory") {
     MemcpyHtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyHostToDevice));
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyHostToDevice, nullptr));
       HIP_CHECK(hipStreamQuery(nullptr));
     });
   }
 
   SECTION("Device memory to host memory") {
     const auto f = [](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDeviceToHost));
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDeviceToHost, nullptr));
       HIP_CHECK(hipStreamQuery(nullptr));
     };
     MemcpyDtoHPageableSyncBehavior(f);
@@ -682,16 +843,108 @@ TEST_CASE("Unit_hipMemcpyWithStream_Synchronization_Behavior") {
     return;
 #endif
     MemcpyDtoDSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpy(dst, src, count, hipMemcpyDeviceToDevice));
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyDeviceToDevice, nullptr));
       HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
     });
   }
 
   SECTION("Host memory to host memory") {
     MemcpyHtoHSyncBehavior([](void* dst, void* src, size_t count) {
-      HIP_CHECK(hipMemcpyAsync(dst, src, count, hipMemcpyHostToHost, nullptr));
+      HIP_CHECK(hipMemcpyWithStream(dst, src, count, hipMemcpyHostToHost, nullptr));
       HIP_CHECK(hipStreamQuery(nullptr));
     });
+  }
+}
+
+TEST_CASE("Unit_hipMemcpyWithStream_Negative_Parameters") {
+  using namespace std::placeholders;
+
+  SECTION("Host to device") {
+    LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(
+        std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyHostToDevice, nullptr),
+        device_alloc.ptr(), host_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyWithStream(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
+                                          static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyWithStream(device_alloc.ptr(), host_alloc.ptr(), kPageSize,
+                                          hipMemcpyHostToDevice, stream),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Device to host") {
+    LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(
+        std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyDeviceToHost, nullptr),
+        host_alloc.ptr(), device_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyWithStream(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
+                                          static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyWithStream(host_alloc.ptr(), device_alloc.ptr(), kPageSize,
+                                          hipMemcpyDeviceToHost, stream),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Host to host") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(
+        std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyHostToHost, nullptr), dst_alloc.ptr(),
+        src_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyWithStream(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
+                                          static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyWithStream(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
+                                          hipMemcpyHostToHost, stream),
+                      hipErrorInvalidValue);
+    }
+  }
+
+  SECTION("Device to device") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
+
+    MemcpyCommonNegativeTests(
+        std::bind(hipMemcpyWithStream, _1, _2, _3, hipMemcpyDeviceToDevice, nullptr),
+        dst_alloc.ptr(), src_alloc.ptr(), kPageSize);
+
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(hipMemcpyWithStream(src_alloc.ptr(), dst_alloc.ptr(), kPageSize,
+                                          static_cast<hipMemcpyKind>(-1), nullptr),
+                      hipErrorInvalidValue);
+    }
+
+    SECTION("Invalid stream") {
+      hipStream_t stream;
+      HIP_CHECK_ERROR(hipMemcpyWithStream(dst_alloc.ptr(), src_alloc.ptr(), kPageSize,
+                                          hipMemcpyDeviceToDevice, stream),
+                      hipErrorInvalidValue);
+    }
   }
 }
 /*------------------------------------------------------------------------------------------------*/
@@ -714,6 +967,15 @@ TEST_CASE("Unit_hipMemcpyDtoH_Synchronization_Behavior") {
   MemcpyDtoHPageableSyncBehavior(f);
   MemcpyDtoHPinnedSyncBehavior(f);
 }
+
+TEST_CASE("Unit_hipMemcpyDtoH_Negative_Parameters") {
+  using namespace std::placeholders;
+  LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+  LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoH, _1, _2, _3), host_alloc.ptr(),
+                            device_alloc.ptr(), kPageSize);
+}
 /*------------------------------------------------------------------------------------------------*/
 
 
@@ -730,6 +992,15 @@ TEST_CASE("Unit_hipMemcpyHtoD_Synchronization_Behavior") {
     HIP_CHECK(hipMemcpyHtoD(reinterpret_cast<hipDeviceptr_t>(dst), src, count));
     HIP_CHECK(hipStreamQuery(nullptr));
   });
+}
+
+TEST_CASE("Unit_hipMemcpyHtoD_Negative_Parameters") {
+  using namespace std::placeholders;
+  LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+  LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoD, _1, _2, _3), device_alloc.ptr(),
+                            host_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -759,6 +1030,15 @@ TEST_CASE("Unit_hipMemcpyDtoD_Synchronization_Behavior") {
                             reinterpret_cast<hipDeviceptr_t>(src), count));
     HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
   });
+}
+
+TEST_CASE("Unit_hipMemcpyDtoD_Negative_Parameters") {
+  using namespace std::placeholders;
+  LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
+  LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
+
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoD, _1, _2, _3), dst_alloc.ptr(), src_alloc.ptr(),
+                            kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
 
@@ -793,6 +1073,15 @@ TEST_CASE("Unit_hipMemcpyDtoHAsync_Synchronization_Behavior") {
     });
   }
 }
+
+TEST_CASE("Unit_hipMemcpyDtoHAsync_Negative_Parameters") {
+  using namespace std::placeholders;
+  LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+  LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoHAsync, _1, _2, _3, nullptr), host_alloc.ptr(),
+                            device_alloc.ptr(), kPageSize);
+}
 /*------------------------------------------------------------------------------------------------*/
 
 
@@ -822,6 +1111,15 @@ TEST_CASE("Unit_hipMemcpyHtoDAsync_Synchronization_Behavior") {
     HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
   });
 }
+
+TEST_CASE("Unit_hipMemcpyHtoDAsync_Negative_Parameters") {
+  using namespace std::placeholders;
+  LinearAllocGuard<int> device_alloc(LinearAllocs::hipMalloc, kPageSize);
+  LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, kPageSize);
+
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyHtoDAsync, _1, _2, _3, nullptr), device_alloc.ptr(),
+                            host_alloc.ptr(), kPageSize);
+}
 /*------------------------------------------------------------------------------------------------*/
 
 
@@ -845,5 +1143,14 @@ TEST_CASE("Unit_hipMemcpyDtoDAsync_Synchronization_Behavior") {
                                  reinterpret_cast<hipDeviceptr_t>(src), count, nullptr));
     HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
   });
+}
+
+TEST_CASE("Unit_hipMemcpyDtoDAsync_Negative_Parameters") {
+  using namespace std::placeholders;
+  LinearAllocGuard<int> src_alloc(LinearAllocs::hipMalloc, kPageSize);
+  LinearAllocGuard<int> dst_alloc(LinearAllocs::hipMalloc, kPageSize);
+
+  MemcpyCommonNegativeTests(std::bind(hipMemcpyDtoDAsync, _1, _2, _3, nullptr), dst_alloc.ptr(),
+                            src_alloc.ptr(), kPageSize);
 }
 /*------------------------------------------------------------------------------------------------*/
