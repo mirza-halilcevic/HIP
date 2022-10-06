@@ -61,7 +61,7 @@ TEST_CASE("Unit_hipStreamAttachMemAsync_Negative") {
 
   SECTION("Invalid Flags") {
     HIP_CHECK_ERROR(
-        hipStreamAttachMemAsync(stream, reinterpret_cast<void*>(&var), sizeof(int) - 1,
+        hipStreamAttachMemAsync(stream, reinterpret_cast<void*>(&var), sizeof(int),
                                 hipMemAttachSingle | hipMemAttachHost | hipMemAttachGlobal),
         hipErrorInvalidValue);
   }

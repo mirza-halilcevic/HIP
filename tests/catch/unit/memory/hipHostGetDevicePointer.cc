@@ -24,6 +24,7 @@ THE SOFTWARE.
 
 TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
   int* hPtr{nullptr};
+  int *dptr = nullptr;
   HIP_CHECK(hipHostMalloc(&hPtr, sizeof(int)));
 
   SECTION("Nullptr as device") {
@@ -36,7 +37,16 @@ TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
                     hipErrorInvalidValue);
   }
 
-  // Not adding check for flags since CUDA spec states that there might be more values added to it
+  SECTION("Non pinned memory as host") {
+    int *hptr = reinterpret_cast<int*>(malloc(sizeof(*hptr)));
+    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dptr), hptr, 0), hipErrorInvalidValue);
+    free(hptr);
+  }
+
+  SECTION("flags non zero") {
+    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dptr), hPtr, 1), hipErrorInvalidValue);
+  }
+
   HIP_CHECK(hipHostFree(hPtr));
 }
 
@@ -71,7 +81,7 @@ TEST_CASE("Unit_hipHostGetDevicePointer_UseCase") {
     HIP_CHECK(hipDeviceSynchronize());
     HIP_CHECK(hipHostUnregister(&res));
 
-    REQUIRE(value == 10);
+    REQUIRE(*dPtr == value);
   }
 
   HIP_CHECK(hipHostFree(hPtr));
