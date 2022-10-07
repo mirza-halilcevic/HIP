@@ -21,11 +21,18 @@ THE SOFTWARE.
 */
 
 #include <hip_test_common.hh>
+#include <utils.hh>
 
 TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
   int* hPtr{nullptr};
-  int *dptr = nullptr;
+  int* dPtr = nullptr;
   HIP_CHECK(hipHostMalloc(&hPtr, sizeof(int)));
+
+  if (!DeviceAttributesSupport(0, hipDeviceAttributeCanMapHostMemory)) {
+    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dPtr), hPtr, 0),
+                    hipErrorNotSupported);
+    return;
+  }
 
   SECTION("Nullptr as device") {
     HIP_CHECK_ERROR(hipHostGetDevicePointer(nullptr, hPtr, 0), hipErrorInvalidValue);
@@ -38,13 +45,15 @@ TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
   }
 
   SECTION("Non pinned memory as host") {
-    int *hptr = reinterpret_cast<int*>(malloc(sizeof(*hptr)));
-    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dptr), hptr, 0), hipErrorInvalidValue);
+    int* hptr = reinterpret_cast<int*>(malloc(sizeof(*hptr)));
+    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dPtr), hptr, 0),
+                    hipErrorInvalidValue);
     free(hptr);
   }
 
   SECTION("flags non zero") {
-    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dptr), hPtr, 1), hipErrorInvalidValue);
+    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dPtr), hPtr, 1),
+                    hipErrorInvalidValue);
   }
 
   HIP_CHECK(hipHostFree(hPtr));
@@ -53,6 +62,11 @@ TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
 template <typename T> __global__ void set(T* ptr, T val) { *ptr = val; }
 
 TEST_CASE("Unit_hipHostGetDevicePointer_UseCase") {
+  if(!DeviceAttributesSupport(0, hipDeviceAttributeCanMapHostMemory)) {
+    HipTest::HIP_SKIP_TEST("Device does not support mapping host memory");
+    return;
+  }
+
   int* hPtr{nullptr};
   HIP_CHECK(hipHostMalloc(&hPtr, sizeof(int)));
 
