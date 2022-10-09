@@ -48,11 +48,10 @@ using namespace std::chrono_literals;
 const std::chrono::duration<uint64_t, std::milli> delay = 50ms;
 constexpr size_t numAllocs = 10;
 
-#if HT_AMD /* Disabled because frequency based wait is timing out on nvidia platforms */
-TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncDev", "", char, float, float2, float4) {
-  TestType* devPtr{};
+TEST_CASE("Unit_hipFreeImplicitSyncDev") {
+  int* devPtr{};
   size_t size_mult = GENERATE(1, 32, 64, 128, 256);
-  HIP_CHECK(hipMalloc(&devPtr, sizeof(TestType) * size_mult));
+  HIP_CHECK(hipMalloc(&devPtr, sizeof(*devPtr) * size_mult));
 
   HipTest::runKernelForDuration(delay);
   // make sure device is busy
@@ -61,11 +60,11 @@ TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncDev", "", char, float, float2, float
   HIP_CHECK(hipStreamQuery(nullptr));
 }
 
-TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncHost", "", char, float, float2, float4) {
-  TestType* hostPtr{};
+TEST_CASE("Unit_hipFreeImplicitSyncHost") {
+  int* hostPtr{};
   size_t size_mult = GENERATE(1, 32, 64, 128, 256);
 
-  HIP_CHECK(hipHostMalloc(&hostPtr, sizeof(TestType) * size_mult));
+  HIP_CHECK(hipHostMalloc(&hostPtr, sizeof(*hostPtr) * size_mult));
 
   HipTest::runKernelForDuration(delay);
   // make sure device is busy
@@ -74,17 +73,16 @@ TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncHost", "", char, float, float2, floa
   HIP_CHECK(hipStreamQuery(nullptr));
 }
 
-#if HT_NVIDIA  // Meaningless at the moment, since we are not running wait kernel on nvidia.
 TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncArray", "", char, float, float2, float4) {
+  HIP_CHECK(hipFree(nullptr));
   using vec_info = vector_info<TestType>;
-  DriverContext ctx;
-
 
   size_t width = GENERATE(32, 512, 1024);
   size_t height = GENERATE(32, 512, 1024);
 
   SECTION("ArrayFree") {
-    hipArray_t arrayPtr{};
+    hipArray *arrayPtr{};
+    
     hipChannelFormatDesc desc = hipCreateChannelDesc<TestType>();
 
     HIP_CHECK(hipMallocArray(&arrayPtr, &desc, width, height, hipArrayDefault));
@@ -110,32 +108,29 @@ TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncArray", "", char, float, float2, flo
     HIP_CHECK(hipStreamQuery(nullptr));
   }
 }
-#else  // AMD
 
-TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncArray", "", char, float, float2, float4) {
-  hipArray_t arrayPtr{};
-  hipExtent extent{};
-  extent.width = GENERATE(32, 128, 256, 512, 1024);
-  extent.height = GENERATE(0, 32, 128, 256, 512, 1024);
-  hipChannelFormatDesc desc = hipCreateChannelDesc<TestType>();
+// TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncArray", "", char, float, float2, float4) {
+//   hipArray *arrayPtr{};
+//   hipExtent extent{};
+//   extent.width = GENERATE(32, 128, 256, 512, 1024);
+//   extent.height = GENERATE(0, 32, 128, 256, 512, 1024);
+//   hipChannelFormatDesc desc = hipCreateChannelDesc<TestType>();
 
-  HIP_CHECK(hipMallocArray(&arrayPtr, &desc, extent.width, extent.height, hipArrayDefault));
-  HipTest::runKernelForDuration(delay);
-  // make sure device is busy
-  HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-  // Second free segfaults
-  SECTION("ArrayDestroy") {
-    HIP_CHECK(hipArrayDestroy(arrayPtr));
-    HIP_CHECK(hipStreamQuery(nullptr));
-  }
-  SECTION("ArrayFree") {
-    HIP_CHECK(hipFreeArray(arrayPtr));
-    HIP_CHECK(hipStreamQuery(nullptr));
-  }
-}
+//   HIP_CHECK(hipMallocArray(&arrayPtr, &desc, extent.width, extent.height, hipArrayDefault));
+//   HipTest::runKernelForDuration(delay);
+//   // make sure device is busy
+//   HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
+//   // Second free segfaults
+//   SECTION("ArrayDestroy") {
+//     HIP_CHECK(hipArrayDestroy(arrayPtr));
+//     HIP_CHECK(hipStreamQuery(nullptr));
+//   }
+//   SECTION("ArrayFree") {
+//     HIP_CHECK(hipFreeArray(arrayPtr));
+//     HIP_CHECK(hipStreamQuery(nullptr));
+//   }
+// }
 
-#endif
-#endif
 
 // Freeing a invalid pointer with on device
 TEST_CASE("Unit_hipFreeNegativeDev") {
