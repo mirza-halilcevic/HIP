@@ -109,29 +109,6 @@ TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncArray", "", char, float, float2, flo
   }
 }
 
-// TEMPLATE_TEST_CASE("Unit_hipFreeImplicitSyncArray", "", char, float, float2, float4) {
-//   hipArray *arrayPtr{};
-//   hipExtent extent{};
-//   extent.width = GENERATE(32, 128, 256, 512, 1024);
-//   extent.height = GENERATE(0, 32, 128, 256, 512, 1024);
-//   hipChannelFormatDesc desc = hipCreateChannelDesc<TestType>();
-
-//   HIP_CHECK(hipMallocArray(&arrayPtr, &desc, extent.width, extent.height, hipArrayDefault));
-//   HipTest::runKernelForDuration(delay);
-//   // make sure device is busy
-//   HIP_CHECK_ERROR(hipStreamQuery(nullptr), hipErrorNotReady);
-//   // Second free segfaults
-//   SECTION("ArrayDestroy") {
-//     HIP_CHECK(hipArrayDestroy(arrayPtr));
-//     HIP_CHECK(hipStreamQuery(nullptr));
-//   }
-//   SECTION("ArrayFree") {
-//     HIP_CHECK(hipFreeArray(arrayPtr));
-//     HIP_CHECK(hipStreamQuery(nullptr));
-//   }
-// }
-
-
 // Freeing a invalid pointer with on device
 TEST_CASE("Unit_hipFreeNegativeDev") {
   SECTION("InvalidPtr") {
@@ -159,17 +136,12 @@ TEST_CASE("Unit_hipFreeNegativeHost") {
 
 #if HT_NVIDIA
 TEST_CASE("Unit_hipFreeNegativeArray") {
-  DriverContext ctx;
-  hipArray_t arrayPtr{};
-  hiparray cuArrayPtr{};
-
   SECTION("ArrayFree") { HIP_CHECK(hipFreeArray(nullptr)); }
   SECTION("ArrayDestroy") {
     HIP_CHECK_ERROR(hipArrayDestroy(nullptr), hipErrorInvalidResourceHandle);
   }
 }
 #else
-
 // Freeing a invalid pointer with array
 TEST_CASE("Unit_hipFreeNegativeArray") {
   SECTION("ArrayFree") { HIP_CHECK_ERROR(hipFreeArray(nullptr), hipErrorInvalidValue); }
