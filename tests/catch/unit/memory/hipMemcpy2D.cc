@@ -37,6 +37,7 @@ THE SOFTWARE.
 
 #include <hip_test_common.hh>
 #include <hip_test_checkers.hh>
+#include <resource_guards.hh>
 
 static constexpr auto NUM_W{16};
 static constexpr auto NUM_H{16};
@@ -111,6 +112,87 @@ TEMPLATE_TEST_CASE("Unit_hipMemcpy2D_H2D-D2D-D2H", ""
   }
 }
 
+
+template <typename T> __global__ void blahem(T* const out, size_t pitch, size_t w, size_t h, size_t d) {
+  const auto x = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto y = blockIdx.y * blockDim.y + threadIdx.y;
+  const auto z = blockIdx.z * blockDim.z + threadIdx.z;
+  if (x < w && y < h && z < d) {
+    char *const slice = reinterpret_cast<char*>(out) + pitch * h * z;
+    char* const row = slice + pitch * y;
+    reinterpret_cast<T*>(row)[x] = z * w * h + y * w + x;
+  }
+}
+
+TEST_CASE("Moo") {
+  constexpr size_t width = 2048;
+  constexpr size_t height = width;
+  constexpr size_t depth = 5;
+  hipPitchedPtr pitched_ptr;
+  const hipExtent extent{width * sizeof(int), height, depth};
+  HIP_CHECK(hipMalloc3D(&pitched_ptr, extent));
+  const dim3 threads_per_block(32, 32);
+  const dim3 blocks(width / threads_per_block.x + 1, height / threads_per_block.y + 1, depth);
+  blahem<<<blocks, threads_per_block>>>(reinterpret_cast<int*>(pitched_ptr.ptr), pitched_ptr.pitch,
+                                        width, height, depth);
+  HIP_CHECK(hipGetLastError());
+  std::vector<int> arr(width * height * depth);
+  hipMemcpy3DParms params = {0};
+  params.dstPtr = make_hipPitchedPtr(arr.data(), width * sizeof(int), width * sizeof(int), height);
+  params.srcPtr = pitched_ptr;
+  params.extent = extent;
+  params.kind = hipMemcpyDeviceToHost;
+  HIP_CHECK(hipMemcpy3D(&params));
+  for (int i = 0; i < arr.size(); ++i) {
+    if (arr[i] != i) {
+      std::cout << "Wraeng at index: " << i << std::endl;
+    }
+  }
+}
+
+TEST_CASE("Mlahem") {
+  constexpr size_t N = 2048;
+  LinearAllocGuard<int> alloc(LinearAllocs::hipMalloc, N*sizeof(int));
+  const auto threads_per_block = 1024;
+  const auto blocks = N / threads_per_block + 1;
+  blahem<<<blocks, threads_per_block>>>(alloc.ptr(), N*sizeof(int), N, 1, 1);
+  HIP_CHECK(hipGetLastError());
+  std::vector<int> arr(N);
+  HIP_CHECK(hipMemcpy(arr.data(), alloc.ptr(), N*sizeof(int), hipMemcpyDeviceToHost));
+  for(int i = 0; i < arr.size(); ++i) {
+    if(arr[i] != i) {
+      std::cout << "Wraeng at index: " << i << std::endl;
+    }
+  }
+}
+
+TEST_CASE("Blahem") {
+  int* ptr = nullptr;
+  size_t pitch = 0;
+  constexpr size_t width = 2048;
+  constexpr size_t height = width;
+  HIP_CHECK(hipMallocPitch(reinterpret_cast<void**>(&ptr), &pitch, width * sizeof(*ptr), height));
+  dim3 threads_per_block(32, 32);
+  dim3 blocks(width / threads_per_block.x + 1, height / threads_per_block.y + 1);
+  blahem<<<blocks, threads_per_block>>>(ptr, pitch, width, height, 1);
+  HIP_CHECK(hipGetLastError());
+  std::vector<int> arr(width*height);
+  HIP_CHECK(hipMemcpy2D(arr.data(), width * sizeof(*ptr), ptr, pitch, width * sizeof(*ptr), height,
+                        hipMemcpyDeviceToHost));
+  for(int i = 0; i < arr.size(); ++i) {
+    if(arr[i] != i) {
+      std::cout << "Wraeng at index: " << i << std::endl;
+    }
+  }
+  // int one[2][6] = {{0, 1, 2, 3, -1, -1}, {4, 5, 6, 7, -1, -1}};
+  // int two [8];
+  // HIP_CHECK(hipMemcpy2D(two, 4*sizeof(int), one, 6*sizeof(int), 4*sizeof(int), 2, hipMemcpyHostToHost));
+  // for(int i = 0; i < 8; ++i) {
+  //   std::cout << two[i] << " ";
+  // }
+  // std::cout << std::endl;
+}
+
 /*
 This testcases performs the following scenarios of hipMemcpy2D API on Peer GPU
 1. H2D-D2D-D2H for Host Memory<-->Device Memory
@@ -162,6 +244,8 @@ TEMPLATE_TEST_CASE("Unit_hipMemcpy2D_multiDevice-D2D", ""
       HIP_CHECK(hipSetDevice(1));
 
       // Host to Device
+      std::cout << COLUMNS * sizeof(TestType) << std::endl;
+      std::cout << pitch_A << std::endl;
       HIP_CHECK(hipMemcpy2D(A_d, pitch_A, A_h, COLUMNS*sizeof(TestType),
             COLUMNS*sizeof(TestType), ROWS, hipMemcpyHostToDevice));
 
