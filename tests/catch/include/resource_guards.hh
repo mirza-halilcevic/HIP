@@ -20,6 +20,7 @@ THE SOFTWARE.
 #pragma once
 
 #include <hip_test_common.hh>
+#include <hip_array_common.hh>
 #include <hip/hip_runtime_api.h>
 
 enum class LinearAllocs {
@@ -144,6 +145,74 @@ template <typename T> class LinearAllocGuard3D : public LinearAllocGuardMultiDim
   LinearAllocGuard3D(LinearAllocGuard3D&&) = delete;
 
   size_t depth() const { return this->extent_.depth; }
+template <typename T> class ArrayAllocGuard {
+  protected:
+  ArrayAllocGuard(bool drv_alloc_type)
+  : drv_alloc_type_{drv_alloc_type} {}
+
+  ~ArrayAllocGuard() {
+    // No Catch macros, don't want to possibly throw in the destructor
+    if (drv_alloc_type_ == false) {
+      // Cast to void to suppress nodiscard warnings
+      static_cast<void>(hipFreeArray(ptr_));
+    } else {
+      static_cast<void>(hipArrayDestroy(ptr_));
+    }
+  }
+
+  public:
+  hipArray_t ptr() { return ptr_; };
+  hipArray_t const ptr() const { return ptr_; };
+
+  public:
+  hipArray_t ptr_;
+  const bool drv_alloc_type_;
+};
+
+template <typename T> class ArrayAllocGuard2D : public ArrayAllocGuard<T> {
+  public:
+  ArrayAllocGuard2D(const size_t width, const size_t height, const unsigned int flags = 0u, const bool drv_alloc_type = false)
+  : ArrayAllocGuard<T>(drv_alloc_type) {
+    if (this->drv_alloc_type_ == false) {
+      hipChannelFormatDesc desc = hipCreateChannelDesc<T>();
+      HIP_CHECK(hipMallocArray(&this->ptr_, &desc, static_cast<unsigned int>(width), static_cast<unsigned int>(height), flags));
+    } else {
+      HIP_ARRAY_DESCRIPTOR desc{};
+      using vec_info = vector_info<T>;
+      desc.Format = vec_info::format;
+      desc.NumChannels = vec_info::size;
+      desc.Width = width;
+      desc.Height = height;
+      HIP_CHECK(hipArrayCreate(&this->ptr_, &desc));
+    }
+  }
+
+  ArrayAllocGuard2D(const ArrayAllocGuard2D&) = delete;
+  ArrayAllocGuard2D(ArrayAllocGuard2D&&) = delete;
+};
+
+template <typename T> class ArrayAllocGuard3D : public ArrayAllocGuard<T> {
+  public:
+  ArrayAllocGuard3D(const size_t width, const size_t height, const size_t depth, const unsigned int flags = 0u, const bool drv_alloc_type = false)
+  : ArrayAllocGuard<T>(drv_alloc_type) {
+    if (this->drv_alloc_type_ == false) {
+      hipChannelFormatDesc desc = hipCreateChannelDesc<T>();
+      HIP_CHECK(hipMalloc3DArray(&this->ptr_, &desc, make_hipExtent(width, height, depth), flags));
+    } else {
+      HIP_ARRAY3D_DESCRIPTOR desc{};
+      using vec_info = vector_info<T>;
+      desc.Format = vec_info::format;
+      desc.NumChannels = vec_info::size;
+      desc.Width = width;
+      desc.Height = height;
+      desc.Depth = depth;
+      desc.Flags = flags;
+      HIP_CHECK(hipArray3DCreate(&this->ptr_, &desc));
+    }
+  }
+
+  ArrayAllocGuard3D(const ArrayAllocGuard3D&) = delete;
+  ArrayAllocGuard3D(ArrayAllocGuard3D&&) = delete;
 };
 
 enum class Streams { nullstream, perThread, created };
