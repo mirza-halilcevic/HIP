@@ -75,3 +75,61 @@ TEST_CASE("Unit_hipMemcpyParam2D_Positive_Parameters") {
   };
   Memcpy2DZeroWidthHeight<false>(f);
 }
+
+TEST_CASE("Unit_hipMemcpyParam2D_Negative_Parameters") {
+  constexpr size_t cols = 128;
+  constexpr size_t rows = 128;
+
+  constexpr auto NegativeTests = [](void* dst, size_t dpitch, const void* src, size_t spitch,
+                                    size_t width, size_t height, hipMemcpyKind kind) {
+    SECTION("dst == nullptr") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter(kind)(nullptr, dpitch, src, spitch, width, height, kind),
+                      hipErrorInvalidValue);
+    }
+    SECTION("src == nullptr") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter(kind)(dst, dpitch, nullptr, spitch, width, height, kind),
+                      hipErrorInvalidValue);
+    }
+    SECTION("dpitch < width") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter(kind)(dst, width - 1, src, spitch, width, height, kind),
+                      hipErrorInvalidPitchValue);
+    }
+    SECTION("spitch < width") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter(kind)(dst, dpitch, src, width - 1, width, height, kind),
+                      hipErrorInvalidPitchValue);
+    }
+    SECTION("Invalid MemcpyKind") {
+      HIP_CHECK_ERROR(
+          MemcpyParam2DAdapter(kind)(dst, dpitch, src, spitch, width, height, static_cast<hipMemcpyKind>(-1)),
+          hipErrorInvalidMemcpyDirection);
+    }
+  };
+
+  SECTION("Host to device") {
+    LinearAllocGuard2D<int> device_alloc(cols, rows);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, device_alloc.pitch() * rows);
+    NegativeTests(device_alloc.ptr(), device_alloc.pitch(), host_alloc.ptr(), device_alloc.pitch(),
+                  device_alloc.width(), device_alloc.height(), hipMemcpyHostToDevice);
+  }
+
+  SECTION("Device to host") {
+    LinearAllocGuard2D<int> device_alloc(cols, rows);
+    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, device_alloc.pitch() * rows);
+    NegativeTests(host_alloc.ptr(), device_alloc.pitch(), device_alloc.ptr(), device_alloc.pitch(),
+                  device_alloc.width(), device_alloc.height(), hipMemcpyDeviceToHost);
+  }
+
+  SECTION("Host to host") {
+    LinearAllocGuard<int> src_alloc(LinearAllocs::hipHostMalloc, cols * rows * sizeof(int));
+    LinearAllocGuard<int> dst_alloc(LinearAllocs::hipHostMalloc, cols * rows * sizeof(int));
+    NegativeTests(dst_alloc.ptr(), cols * sizeof(int), src_alloc.ptr(), cols * sizeof(int),
+                  cols * sizeof(int), rows, hipMemcpyHostToHost);
+  }
+
+  SECTION("Device to device") {
+    LinearAllocGuard2D<int> src_alloc(cols, rows);
+    LinearAllocGuard2D<int> dst_alloc(cols, rows);
+    NegativeTests(dst_alloc.ptr(), dst_alloc.pitch(), src_alloc.ptr(), src_alloc.pitch(),
+                  dst_alloc.width(), dst_alloc.height(), hipMemcpyDeviceToDevice);
+  }
+}

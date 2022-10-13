@@ -320,7 +320,7 @@ void Memcpy2DZeroWidthHeight(F memcpy_func, const hipStream_t stream = nullptr) 
   }
 }
 
-static constexpr auto MemTypeHost() {
+constexpr auto MemTypeHost() {
 #if HT_AMD
   return hipMemoryTypeHost;
 #else
@@ -328,11 +328,19 @@ static constexpr auto MemTypeHost() {
 #endif
 }
 
-static constexpr auto MemTypeDevice() {
+constexpr auto MemTypeDevice() {
 #if HT_AMD
   return hipMemoryTypeDevice;
 #else
   return CU_MEMORYTYPE_DEVICE;
+#endif
+}
+
+constexpr auto MemTypeArray() {
+#if HT_AMD
+  return hipMemoryTypeArray;
+#else
+  return CU_MEMORYTYPE_ARRAY;
 #endif
 }
 
