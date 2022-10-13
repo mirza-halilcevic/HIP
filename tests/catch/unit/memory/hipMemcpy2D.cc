@@ -19,7 +19,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#include "2d_memcpy_tests_common.hh"
+#include "memcpy2d_tests_common.hh"
 
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
@@ -40,6 +40,7 @@ TEST_CASE("Unit_hipMemcpy2D_Positive_Basic") {
 }
 
 TEST_CASE("Unit_hipMemcpy2D_Positive_Synchronization_Behavior") {
+  HIP_CHECK(hipDeviceSynchronize());
   SECTION("Host to Device") { Memcpy2DHtoDSyncBehavior(hipMemcpy2D, true); }
 
   SECTION("Device to Host") {
