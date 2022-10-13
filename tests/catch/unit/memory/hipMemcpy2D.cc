@@ -19,84 +19,37 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#include "2d_memcpy_tests_common.hh"
+
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 #include <resource_guards.hh>
 #include <utils.hh>
 
 TEST_CASE("Unit_hipMemcpy2D_Positive_Basic") {
-  SECTION("Device to host") {
-    constexpr size_t cols = 128;
-    constexpr size_t rows = 128;
+  SECTION("Device to Host") { Memcpy2DDeviceToHostShell<false>(hipMemcpy2D); }
 
-    LinearAllocGuard2D<int> device_alloc(cols, rows);
-
-    const size_t host_pitch = GENERATE_REF(device_alloc.pitch(), device_alloc.width());
-    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, host_pitch * rows);
-
-    const dim3 threads_per_block(32, 32);
-    const dim3 blocks(cols / threads_per_block.x + 1, rows / threads_per_block.y + 1);
-    Iota<<<blocks, threads_per_block>>>(device_alloc.ptr(), device_alloc.pitch(),
-                                        device_alloc.width_logical(), device_alloc.height(), 1);
-    HIP_CHECK(hipGetLastError());
-
-    HIP_CHECK(hipMemcpy2D(host_alloc.ptr(), host_pitch, device_alloc.ptr(), device_alloc.pitch(),
-                          device_alloc.width(), device_alloc.height(), hipMemcpyDeviceToHost));
-
-    constexpr auto f = [](size_t x, size_t y, size_t z) { return z * cols * rows + y * rows + x; };
-    PitchedMemoryVerify(host_alloc.ptr(), host_pitch, device_alloc.width_logical(),
-                        device_alloc.height(), 1, f);
+  SECTION("Device to Device") {
+    SECTION("Peer access disabled") { Memcpy2DDeviceToDeviceShell<false, false>(hipMemcpy2D); }
+    SECTION("Peer access enabled") { Memcpy2DDeviceToDeviceShell<false, true>(hipMemcpy2D); }
   }
 
-  SECTION("Device to device") {
-    constexpr size_t cols = 128;
-    constexpr size_t rows = 128;
+  SECTION("Host to Device") { Memcpy2DHostToDeviceShell<false>(hipMemcpy2D); }
 
-    const auto device_count = HipTest::getDeviceCount();
-    const auto src_device = GENERATE_COPY(range(0, device_count));
-    const auto dst_device = GENERATE_COPY(range(0, device_count));
-    const size_t src_cols_mult = GENERATE(1, 2);
-    // TODO - Not like this
-    const bool enable_peer_access = GENERATE(true, false);
-    INFO("Src device: " << src_device << ", Dst device: " << dst_device);
+  SECTION("Host to Host") { Memcpy2DHostToHostShell<false>(hipMemcpy2D); }
+}
 
-    HIP_CHECK(hipSetDevice(src_device));
-    if (enable_peer_access) {
-      if (src_device == dst_device) {
-        return;
-      }
-      int can_access_peer = 0;
-      HIP_CHECK(hipDeviceCanAccessPeer(&can_access_peer, src_device, dst_device));
-      if (!can_access_peer) {
-        INFO("Peer access cannot be enabled between devices " << src_device << " " << dst_device);
-        REQUIRE(can_access_peer);
-      }
-      HIP_CHECK(hipDeviceEnablePeerAccess(dst_device, 0));
-    }
+TEST_CASE("Unit_hipMemcpy2D_Positive_Synchronization_Behavior") {
+  SECTION("Host to Device") { Memcpy2DHtoDSyncBehavior(hipMemcpy2D, true); }
 
-    LinearAllocGuard2D<int> src_alloc(cols * src_cols_mult, rows);
-    HIP_CHECK(hipSetDevice(src_device));
-    LinearAllocGuard2D<int> dst_alloc(cols, rows);
-    HIP_CHECK(hipSetDevice(src_device));
-    LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, dst_alloc.width() * rows);
-
-    const dim3 threads_per_block(32, 32);
-    const dim3 blocks(cols / threads_per_block.x + 1, rows / threads_per_block.y + 1);
-    // Using dst_alloc width and height to set only the elements that will be copied over to
-    // dst_alloc
-    Iota<<<blocks, threads_per_block>>>(src_alloc.ptr(), src_alloc.pitch(),
-                                        dst_alloc.width_logical(), dst_alloc.height(), 1);
-    HIP_CHECK(hipGetLastError());
-
-    HIP_CHECK(hipMemcpy2D(dst_alloc.ptr(), dst_alloc.pitch(), src_alloc.ptr(), src_alloc.pitch(),
-                          dst_alloc.width(), dst_alloc.height(), hipMemcpyDeviceToDevice));
-
-    HIP_CHECK(hipMemcpy2D(host_alloc.ptr(), dst_alloc.width(), dst_alloc.ptr(), dst_alloc.pitch(),
-                          dst_alloc.width(), dst_alloc.height(), hipMemcpyDeviceToHost));
-    constexpr auto f = [](size_t x, size_t y, size_t z) { return z * cols * rows + y * rows + x; };
-    PitchedMemoryVerify(host_alloc.ptr(), dst_alloc.width(), dst_alloc.width_logical(),
-                        dst_alloc.height(), 1, f);
+  SECTION("Device to Host") {
+    Memcpy2DDtoHPageableSyncBehavior(hipMemcpy2D, true);
+    Memcpy2DDtoHPageableSyncBehavior(hipMemcpy2D, true);
   }
+
+  SECTION("Device to Device") { Memcpy2DDtoDSyncBehavior(hipMemcpy2D, false); }
+
+  SECTION("Host to Host") { Memcpy2DHtoHSyncBehavior(hipMemcpy2D, true); }
 }
 
 TEST_CASE("Unit_hipMemcpy2D_Negative_Parameters") {
