@@ -45,12 +45,17 @@ TEST_CASE("Unit_hipMemcpy2D_Positive_Synchronization_Behavior") {
 
   SECTION("Device to Host") {
     Memcpy2DDtoHPageableSyncBehavior(hipMemcpy2D, true);
-    Memcpy2DDtoHPageableSyncBehavior(hipMemcpy2D, true);
+    Memcpy2DDtoHPinnedSyncBehavior(hipMemcpy2D, true);
   }
 
   SECTION("Device to Device") { Memcpy2DDtoDSyncBehavior(hipMemcpy2D, false); }
 
   SECTION("Host to Host") { Memcpy2DHtoHSyncBehavior(hipMemcpy2D, true); }
+}
+
+
+TEST_CASE("Unit_hipMemcpy2D_Positive_Parameters") {
+  Memcpy2DZeroWidthHeight<false>(hipMemcpy2D);
 }
 
 TEST_CASE("Unit_hipMemcpy2D_Negative_Parameters") {

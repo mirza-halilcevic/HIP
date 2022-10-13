@@ -242,3 +242,154 @@ void Memcpy2DHtoHSyncBehavior(F memcpy_func, const bool should_sync,
                                     32 * sizeof(int), 32 * sizeof(int), 32, hipMemcpyHostToHost),
                           should_sync, kernel_stream);
 }
+
+template <bool should_synchronize, typename F>
+void Memcpy2DZeroWidthHeight(F memcpy_func, const hipStream_t stream = nullptr) {
+  constexpr size_t cols = 63;
+  constexpr size_t rows = 64;
+  const auto [width_mult, height_mult] =
+      GENERATE(std::make_pair(0, 1), std::make_pair(1, 0), std::make_pair(0, 0));
+  SECTION("Device to Host") {
+    LinearAllocGuard2D<uint8_t> device_alloc(cols, rows);
+    LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, device_alloc.width() * rows);
+    std::fill_n(host_alloc.ptr(), device_alloc.width_logical() * device_alloc.height(), 42);
+    HIP_CHECK(hipMemset2D(device_alloc.ptr(), device_alloc.pitch(), 1, device_alloc.width(),
+                          device_alloc.height()));
+
+    HIP_CHECK(memcpy_func(host_alloc.ptr(), device_alloc.width(), device_alloc.ptr(),
+                          device_alloc.pitch(), device_alloc.width() * width_mult,
+                          device_alloc.height() * height_mult, hipMemcpyDeviceToHost));
+    if constexpr (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    ArrayFindIfNot(host_alloc.ptr(), static_cast<uint8_t>(42),
+                   device_alloc.width_logical() * device_alloc.height());
+  }
+  SECTION("Device to Device") {
+    LinearAllocGuard2D<uint8_t> src_alloc(cols, rows);
+    LinearAllocGuard2D<uint8_t> dst_alloc(cols, rows);
+    LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, dst_alloc.width() * rows);
+    HIP_CHECK(
+        hipMemset2D(src_alloc.ptr(), src_alloc.pitch(), 1, src_alloc.width(), src_alloc.height()));
+    HIP_CHECK(
+        hipMemset2D(dst_alloc.ptr(), dst_alloc.pitch(), 42, dst_alloc.width(), dst_alloc.height()));
+    HIP_CHECK(memcpy_func(dst_alloc.ptr(), dst_alloc.pitch(), src_alloc.ptr(), src_alloc.pitch(),
+                          dst_alloc.width() * width_mult, dst_alloc.height() * height_mult,
+                          hipMemcpyDeviceToDevice));
+    if constexpr (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    HIP_CHECK(hipMemcpy2D(host_alloc.ptr(), dst_alloc.width(), dst_alloc.ptr(), dst_alloc.pitch(),
+                          dst_alloc.width(), dst_alloc.height(), hipMemcpyDeviceToHost));
+    ArrayFindIfNot(host_alloc.ptr(), static_cast<uint8_t>(42),
+                   dst_alloc.width_logical() * dst_alloc.height());
+  }
+  SECTION("Host to Device") {
+    LinearAllocGuard2D<uint8_t> device_alloc(cols, rows);
+    LinearAllocGuard<uint8_t> src_host_alloc(LinearAllocs::hipHostMalloc,
+                                             device_alloc.width() * rows);
+    LinearAllocGuard<uint8_t> dst_host_alloc(LinearAllocs::hipHostMalloc,
+                                             device_alloc.width() * rows);
+    std::fill_n(src_host_alloc.ptr(), device_alloc.width_logical() * device_alloc.height(), 1);
+    HIP_CHECK(hipMemset2D(device_alloc.ptr(), device_alloc.pitch(), 42, device_alloc.width(),
+                          device_alloc.height()));
+    HIP_CHECK(memcpy_func(device_alloc.ptr(), device_alloc.pitch(), src_host_alloc.ptr(),
+                          device_alloc.width(), device_alloc.width() * width_mult,
+                          device_alloc.height() * height_mult, hipMemcpyHostToDevice));
+    if constexpr (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    HIP_CHECK(hipMemcpy2D(dst_host_alloc.ptr(), device_alloc.width(), device_alloc.ptr(),
+                          device_alloc.pitch(), device_alloc.width(), device_alloc.height(),
+                          hipMemcpyDeviceToHost));
+    ArrayFindIfNot(dst_host_alloc.ptr(), static_cast<uint8_t>(42),
+                   device_alloc.width_logical() * device_alloc.height());
+  }
+  SECTION("Host to Host") {
+    const auto alloc_size = cols * rows;
+    LinearAllocGuard<uint8_t> src_alloc(LinearAllocs::hipHostMalloc, alloc_size);
+    LinearAllocGuard<uint8_t> dst_alloc(LinearAllocs::hipHostMalloc, alloc_size);
+    std::fill_n(src_alloc.ptr(), alloc_size, 1);
+    std::fill_n(dst_alloc.ptr(), alloc_size, 42);
+    HIP_CHECK(memcpy_func(dst_alloc.ptr(), cols, src_alloc.ptr(), cols, cols * width_mult,
+                          rows * height_mult, hipMemcpyHostToHost));
+    if constexpr (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    ArrayFindIfNot(dst_alloc.ptr(), static_cast<uint8_t>(42), alloc_size);
+  }
+}
+
+static constexpr auto MemTypeHost() {
+#if HT_AMD
+  return hipMemoryTypeHost;
+#else
+  return CU_MEMORYTYPE_HOST;
+#endif
+}
+
+static constexpr auto MemTypeDevice() {
+#if HT_AMD
+  return hipMemoryTypeDevice;
+#else
+  return CU_MEMORYTYPE_DEVICE;
+#endif
+}
+
+template <hipMemcpyKind kind, bool async = false> constexpr auto MemcpyParam2DAdapter() {
+  return [](void* dst, size_t dpitch, const void* src, size_t spitch, size_t width, size_t height,
+            hipMemcpyKind, hipStream_t stream = nullptr) {
+    hip_Memcpy2D params = {0};
+    if constexpr (kind == hipMemcpyDeviceToHost) {
+      params.dstMemoryType = MemTypeHost();
+      params.dstHost = dst;
+      params.srcMemoryType = MemTypeDevice();
+      params.srcDevice = reinterpret_cast<hipDeviceptr_t>(src);
+    } else if constexpr (kind == hipMemcpyDeviceToDevice) {
+      params.dstMemoryType = MemTypeDevice();
+      params.dstDevice = reinterpret_cast<hipDeviceptr_t>(dst);
+      params.srcMemoryType = MemTypeDevice();
+      params.srcDevice = reinterpret_cast<hipDeviceptr_t>(src);
+    } else if constexpr (kind == hipMemcpyHostToDevice) {
+      params.dstMemoryType = MemTypeDevice();
+      params.dstDevice = reinterpret_cast<hipDeviceptr_t>(dst);
+      params.srcMemoryType = MemTypeHost();
+      params.srcHost = src;
+    } else if constexpr (kind == hipMemcpyHostToHost) {
+      params.dstMemoryType = MemTypeHost();
+      params.dstHost = dst;
+      params.srcMemoryType = MemTypeHost();
+      params.srcHost = src;
+    } else {
+      static_assert(sizeof(kind), "Invalid hipMemcpyKind enumerator");
+    }
+
+    params.dstPitch = dpitch;
+    params.srcPitch = spitch;
+    params.WidthInBytes = width;
+    params.Height = height;
+    if constexpr (async) {
+      return hipMemcpyParam2DAsync(&params, stream);
+    } else {
+      return hipMemcpyParam2D(&params);
+    }
+  };
+}
+
+template <bool async = false>
+std::function<decltype(hipMemcpy2D)> MemcpyParam2DAdapter(const hipMemcpyKind kind,
+                                                          hipStream_t stream = nullptr) {
+  switch (kind) {
+    case hipMemcpyDeviceToHost:
+      return MemcpyParam2DAdapter<hipMemcpyDeviceToHost, async>();
+    case hipMemcpyDeviceToDevice:
+      return MemcpyParam2DAdapter<hipMemcpyDeviceToDevice, async>();
+    case hipMemcpyHostToDevice:
+      return MemcpyParam2DAdapter<hipMemcpyHostToDevice, async>();
+    case hipMemcpyHostToHost:
+      return MemcpyParam2DAdapter<hipMemcpyHostToHost, async>();
+    default:
+      assert("Invalid hipMemcpyKind enumerator");
+      return hipMemcpy2D;
+  }
+}

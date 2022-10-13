@@ -26,75 +26,24 @@ THE SOFTWARE.
 #include <resource_guards.hh>
 #include <utils.hh>
 
-static constexpr auto MemTypeHost() {
-#if HT_AMD
-  return hipMemoryTypeHost;
-#else
-  return CU_MEMORYTYPE_HOST;
-#endif
-}
-
-static constexpr auto MemTypeDevice() {
-#if HT_AMD
-  return hipMemoryTypeDevice;
-#else
-  return CU_MEMORYTYPE_DEVICE;
-#endif
-}
-
-template <hipMemcpyKind kind> static constexpr auto MemcpyParam2DAdapter() {
-  return [](void* dst, size_t dpitch, const void* src, size_t spitch, size_t width, size_t height,
-            hipMemcpyKind) {
-    hip_Memcpy2D params = {0};
-    if constexpr (kind == hipMemcpyDeviceToHost) {
-      params.dstMemoryType = MemTypeHost();
-      params.dstHost = dst;
-      params.srcMemoryType = MemTypeDevice();
-      params.srcDevice = reinterpret_cast<hipDeviceptr_t>(src);
-    } else if constexpr (kind == hipMemcpyDeviceToDevice) {
-      params.dstMemoryType = MemTypeDevice();
-      params.dstDevice = reinterpret_cast<hipDeviceptr_t>(dst);
-      params.srcMemoryType = MemTypeDevice();
-      params.srcDevice = reinterpret_cast<hipDeviceptr_t>(src);
-    } else if constexpr (kind == hipMemcpyHostToDevice) {
-      params.dstMemoryType = MemTypeDevice();
-      params.dstDevice = reinterpret_cast<hipDeviceptr_t>(dst);
-      params.srcMemoryType = MemTypeHost();
-      params.srcHost = src;
-    } else if constexpr (kind == hipMemcpyHostToHost) {
-      params.dstMemoryType = MemTypeHost();
-      params.dstHost = dst;
-      params.srcMemoryType = MemTypeHost();
-      params.srcHost = src;
-    } else {
-      static_assert(sizeof(kind), "Invalid hipMemcpyKind enumerator");
-    }
-
-    params.dstPitch = dpitch;
-    params.srcPitch = spitch;
-    params.WidthInBytes = width;
-    params.Height = height;
-    return hipMemcpyParam2D(&params);
-  };
-}
-
 TEST_CASE("Unit_hipMemcpyParam2D_Positive_Basic") {
+  constexpr bool sync = false;
   SECTION("Device to Host") {
-    Memcpy2DDeviceToHostShell<false>(MemcpyParam2DAdapter<hipMemcpyDeviceToHost>());
+    Memcpy2DDeviceToHostShell<sync>(MemcpyParam2DAdapter<hipMemcpyDeviceToHost>());
   }
 
   SECTION("Device to Device") {
     constexpr auto f = MemcpyParam2DAdapter<hipMemcpyDeviceToDevice>();
-    SECTION("Peer access disabled") { Memcpy2DDeviceToDeviceShell<false, false>(f); }
-    SECTION("Peer access enabled") { Memcpy2DDeviceToDeviceShell<false, true>(f); }
+    SECTION("Peer access disabled") { Memcpy2DDeviceToDeviceShell<sync, false>(f); }
+    SECTION("Peer access enabled") { Memcpy2DDeviceToDeviceShell<sync, true>(f); }
   }
 
   SECTION("Host to Device") {
-    Memcpy2DHostToDeviceShell<false>(MemcpyParam2DAdapter<hipMemcpyHostToDevice>());
+    Memcpy2DHostToDeviceShell<sync>(MemcpyParam2DAdapter<hipMemcpyHostToDevice>());
   }
 
   SECTION("Host to Host") {
-    Memcpy2DHostToHostShell<false>(MemcpyParam2DAdapter<hipMemcpyHostToHost>());
+    Memcpy2DHostToHostShell<sync>(MemcpyParam2DAdapter<hipMemcpyHostToHost>());
   }
 }
 
@@ -117,4 +66,12 @@ TEST_CASE("Unit_hipMemcpyParam2D_Positive_Synchronization_Behavior") {
   SECTION("Host to Host") {
     Memcpy2DHtoHSyncBehavior(MemcpyParam2DAdapter<hipMemcpyHostToHost>(), true);
   }
+}
+
+TEST_CASE("Unit_hipMemcpyParam2D_Positive_Parameters") {
+  const auto f = [](void* dst, size_t dpitch, const void* src, size_t spitch, size_t width,
+                    size_t height, hipMemcpyKind kind) {
+    return MemcpyParam2DAdapter<false>(kind)(dst, dpitch, src, spitch, width, height, kind);
+  };
+  Memcpy2DZeroWidthHeight<false>(f);
 }

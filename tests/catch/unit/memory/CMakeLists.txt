@@ -30,6 +30,7 @@ set(TEST_SRC
     hipMemcpy3DAsync.cc
     hipMemcpyParam2D_old.cc
     hipMemcpyParam2D.cc
+    hipMemcpyParam2DAsync_old.cc
     hipMemcpyParam2DAsync.cc
     hipMemcpy2D.cc
     hipMemcpy2D_old.cc
@@ -112,6 +113,7 @@ set(TEST_SRC
     hipMemcpy3DAsync.cc
     hipMemcpyParam2D_old.cc
     hipMemcpyParam2D.cc
+    hipMemcpyParam2DAsync_old.cc
     hipMemcpyParam2DAsync.cc
     hipMemcpy2D.cc
     hipMemcpy2D_old.cc
