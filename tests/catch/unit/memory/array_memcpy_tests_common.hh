@@ -1,0 +1,342 @@
+/*
+Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+#pragma once
+
+#include <functional>
+
+#include <hip_test_common.hh>
+#include <hip/hip_runtime_api.h>
+#include <utils.hh>
+#include <resource_guards.hh>
+#include <stdio.h>
+#include "hipArrayCommon.hh"
+#include "linear_memcpy_tests_common.hh"
+
+template <bool should_synchronize, typename T, typename F>
+void MemcpyAtoHShell(F memcpy_func, size_t width, const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+
+  const unsigned int flag = hipArrayDefault;
+  
+  size_t allocation_size = width* sizeof(T);
+  const auto host_allocation_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  const auto host_allocation_flags = GenerateLinearAllocationFlagCombinations(host_allocation_type);
+
+  LinearAllocGuard<int> host_allocation(host_allocation_type, allocation_size,
+                                        host_allocation_flags);
+  ArrayAllocGuard2D<int> array_allocation(width, 0, flag);
+  
+  const auto element_count = allocation_size / sizeof(T);
+  constexpr int fill_value = 42;
+  std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
+  
+  HIP_CHECK(hipMemcpy2DToArray(array_allocation.ptr(), 0, 0, host_allocation.host_ptr(), sizeof(T)*width, sizeof(T)*width, 1, hipMemcpyHostToDevice));
+  std::fill_n(host_allocation.host_ptr(), element_count, 0);
+
+  HIP_CHECK(memcpy_func(host_allocation.host_ptr(), array_allocation.ptr()));
+  if (should_synchronize) {
+    HIP_CHECK(hipStreamSynchronize(kernel_stream));
+  }
+
+  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+}
+
+template <bool should_synchronize, typename T, typename F>
+void MemcpyAto2DHostShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+
+  const unsigned int flag = hipArrayDefault;
+  
+  size_t allocation_size = width * height * sizeof(T);
+  const auto host_allocation_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  const auto host_allocation_flags = GenerateLinearAllocationFlagCombinations(host_allocation_type);
+
+  LinearAllocGuard<int> host_allocation(host_allocation_type, allocation_size,
+                                        host_allocation_flags);
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+  
+  const auto element_count = allocation_size / sizeof(T);
+  constexpr int fill_value = 42;
+  std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
+  
+  HIP_CHECK(hipMemcpy2DToArray(array_allocation.ptr(), 0, 0, host_allocation.host_ptr(), sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
+  std::fill_n(host_allocation.host_ptr(), element_count, 0);
+
+  HIP_CHECK(memcpy_func(host_allocation.host_ptr(), array_allocation.ptr()));
+  if (should_synchronize) {
+    HIP_CHECK(hipStreamSynchronize(kernel_stream));
+  }
+
+  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+}
+
+template <bool should_synchronize, bool enable_peer_access, typename T, typename F>
+void Memcpy2DDeviceFromAShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+  const unsigned int flag = hipArrayDefault;
+  size_t allocation_size = width * height * sizeof(T);
+
+  const auto device_count = HipTest::getDeviceCount();
+  const auto src_device = GENERATE_COPY(range(0, device_count));
+  const auto dst_device = GENERATE_COPY(range(0, device_count));
+  INFO("Src device: " << src_device << ", Dst device: " << dst_device);
+
+  HIP_CHECK(hipSetDevice(src_device));
+  if constexpr (enable_peer_access) {
+    if (src_device == dst_device) {
+      return;
+    }
+    int can_access_peer = 0;
+    HIP_CHECK(hipDeviceCanAccessPeer(&can_access_peer, src_device, dst_device));
+    if (!can_access_peer) {
+      INFO("Peer access cannot be enabled between devices " << src_device << " " << dst_device);
+      REQUIRE(can_access_peer);
+    }
+    HIP_CHECK(hipDeviceEnablePeerAccess(dst_device, 0));
+  }
+
+  LinearAllocGuard<int> host_allocation(LA::malloc, allocation_size);
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+  HIP_CHECK(hipSetDevice(dst_device));
+  LinearAllocGuard2D<int> device_allocation(width, height);
+  
+  HIP_CHECK(hipSetDevice(src_device));
+  const auto element_count = allocation_size / sizeof(T);
+  constexpr int fill_value = 42;
+  std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
+
+  HIP_CHECK(hipMemcpy2DToArray(array_allocation.ptr(), 0, 0, host_allocation.host_ptr(), sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
+  std::fill_n(host_allocation.host_ptr(), element_count, 0);
+
+  HIP_CHECK(memcpy_func(device_allocation.ptr(), array_allocation.ptr()));
+  if (should_synchronize) {
+    HIP_CHECK(hipStreamSynchronize(kernel_stream));
+  }
+
+  HIP_CHECK(hipMemcpy2D(host_allocation.host_ptr(), sizeof(T)*width, device_allocation.ptr(),
+           sizeof(T)*width, sizeof(T)*width, height, hipMemcpyDeviceToHost));
+
+  if constexpr (enable_peer_access) {
+    // If we've gotten this far, EnablePeerAccess must have succeeded, so we only need to check this
+    // condition
+    HIP_CHECK(hipDeviceDisablePeerAccess(dst_device));
+  }
+
+  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+}
+
+template <bool should_synchronize, typename T, typename F>
+void MemcpyHtoAShell(F memcpy_func, size_t width, const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+  const unsigned int flag = hipArrayDefault;
+
+  size_t allocation_size = width * sizeof(T);
+  const auto host_allocation_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  const auto host_allocation_flags = GenerateLinearAllocationFlagCombinations(host_allocation_type);
+
+  LinearAllocGuard<T> host_allocation(host_allocation_type, allocation_size,
+                                        host_allocation_flags);
+  ArrayAllocGuard2D<T> array_allocation(width, 0, flag);
+
+  const auto element_count = allocation_size / sizeof(T);
+  constexpr int fill_value = 41;
+  std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
+
+  HIP_CHECK(memcpy_func(array_allocation.ptr(), host_allocation.host_ptr()));
+  if (should_synchronize) {
+    HIP_CHECK(hipStreamSynchronize(kernel_stream));
+  }
+
+  std::fill_n(host_allocation.host_ptr(), element_count, 0);
+
+  HIP_CHECK(hipMemcpy2DFromArray(host_allocation.host_ptr(), sizeof(T)*width, array_allocation.ptr(),
+           0, 0, sizeof(T)*width, 1, hipMemcpyDeviceToHost));
+
+  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+}
+
+template <bool should_synchronize, typename T, typename F>
+void Memcpy2DHosttoAShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
+//void MemcpyHToAShell(const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+  const unsigned int flag = hipArrayDefault;;
+
+  size_t allocation_size = width * height * sizeof(T);
+  const auto host_allocation_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  const auto host_allocation_flags = GenerateLinearAllocationFlagCombinations(host_allocation_type);
+
+  LinearAllocGuard<T> host_allocation(host_allocation_type, allocation_size,
+                                        host_allocation_flags);
+  ArrayAllocGuard2D<T> array_allocation(width, height, flag);
+
+  const auto element_count = allocation_size / sizeof(T);
+  constexpr int fill_value = 41;
+  std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
+
+  HIP_CHECK(memcpy_func(array_allocation.ptr(), host_allocation.host_ptr()));
+  if (should_synchronize) {
+    HIP_CHECK(hipStreamSynchronize(kernel_stream));
+  }
+
+  std::fill_n(host_allocation.host_ptr(), element_count, 0);
+
+  HIP_CHECK(hipMemcpy2DFromArray(host_allocation.host_ptr(), sizeof(T)*width, array_allocation.ptr(),
+           0, 0, sizeof(T)*width, height, hipMemcpyDeviceToHost));
+
+  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+}
+
+template <bool should_synchronize, bool enable_peer_access, typename T, typename F>
+void Memcpy2DDevicetoAShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+  const unsigned int flag = hipArrayDefault;
+  size_t allocation_size = width * height * sizeof(T);
+
+  const auto device_count = HipTest::getDeviceCount();
+  const auto src_device = GENERATE_COPY(range(0, device_count));
+  const auto dst_device = GENERATE_COPY(range(0, device_count));
+  INFO("Src device: " << src_device << ", Dst device: " << dst_device);
+
+  HIP_CHECK(hipSetDevice(src_device));
+  if constexpr (enable_peer_access) {
+    if (src_device == dst_device) {
+      return;
+    }
+    int can_access_peer = 0;
+    HIP_CHECK(hipDeviceCanAccessPeer(&can_access_peer, src_device, dst_device));
+    if (!can_access_peer) {
+      INFO("Peer access cannot be enabled between devices " << src_device << " " << dst_device);
+      REQUIRE(can_access_peer);
+    }
+    HIP_CHECK(hipDeviceEnablePeerAccess(dst_device, 0));
+  }
+
+  LinearAllocGuard<T> host_allocation(LA::malloc, allocation_size);
+  LinearAllocGuard2D<T> device_allocation(width, height);
+  //HIP_CHECK(hipSetDevice(dst_device));
+  ArrayAllocGuard2D<T> array_allocation(width, height, flag);
+
+  //HIP_CHECK(hipSetDevice(src_device));
+  const auto element_count = allocation_size / sizeof(T);
+  constexpr int fill_value = 41;
+  std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
+
+  HIP_CHECK(hipMemcpy2D(device_allocation.ptr(), sizeof(T)*width, host_allocation.host_ptr(),
+           sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
+
+  HIP_CHECK(memcpy_func(array_allocation.ptr(), device_allocation.ptr()));
+  if (should_synchronize) {
+    HIP_CHECK(hipStreamSynchronize(kernel_stream));
+  }
+
+  std::fill_n(host_allocation.host_ptr(), element_count, 0);
+
+  HIP_CHECK(hipMemcpy2DFromArray(host_allocation.host_ptr(), sizeof(T)*width, array_allocation.ptr(),
+           0, 0, sizeof(T)*width, height, hipMemcpyDeviceToHost));
+
+  if constexpr (enable_peer_access) {
+    // If we've gotten this far, EnablePeerAccess must have succeeded, so we only need to check this
+    // condition
+    HIP_CHECK(hipDeviceDisablePeerAccess(dst_device));
+  }
+
+  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+}
+
+// Synchronization behavior checks
+template <typename F>
+void MemcpyArraySyncBehaviorCheck(F memcpy_func, const bool should_sync,
+                             const hipStream_t kernel_stream) {
+  LaunchDelayKernel(std::chrono::milliseconds{100}, kernel_stream);
+  HIP_CHECK(memcpy_func());
+  if (should_sync) {
+    HIP_CHECK(hipStreamQuery(kernel_stream));
+  } else {
+    HIP_CHECK_ERROR(hipStreamQuery(kernel_stream), hipErrorNotReady);
+  }
+}
+
+template <typename F>
+void MemcpyHtoASyncBehavior(F memcpy_func, size_t width, size_t height,
+                            const bool should_sync, const hipStream_t kernel_stream = nullptr) {
+  using LA = LinearAllocs;
+
+  const unsigned int flag = hipArrayDefault;
+  size_t num_h = (height == 0) ? 1 : height;
+  size_t allocation_size = width * num_h * sizeof(int);
+  
+  const auto host_alloc_type = GENERATE(LA::malloc, LA::hipHostMalloc);
+  LinearAllocGuard<int> host_alloc(host_alloc_type, allocation_size);
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, array_allocation.ptr(), host_alloc.ptr()),
+                          should_sync, kernel_stream);
+}
+
+template <typename F>
+void MemcpyAtoHPageableSyncBehavior(F memcpy_func, size_t width, size_t height,
+                                    const bool should_sync, const hipStream_t kernel_stream = nullptr) {
+  const unsigned int flag = hipArrayDefault;
+  size_t num_h = (height == 0) ? 1 : height;
+  size_t allocation_size = width * num_h * sizeof(int);
+
+  LinearAllocGuard<int> host_alloc(LinearAllocs::malloc, allocation_size);
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), array_allocation.ptr()),
+                          should_sync, kernel_stream);
+}
+
+template <typename F>
+void MemcpyAtoHPinnedSyncBehavior(F memcpy_func, size_t width, size_t height,
+                                  const bool should_sync, const hipStream_t kernel_stream = nullptr) {
+  const unsigned int flag = hipArrayDefault;
+  size_t num_h = (height == 0) ? 1 : height;
+  size_t allocation_size = width * num_h * sizeof(int);
+
+  LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, allocation_size);
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), array_allocation.ptr()),
+                          should_sync, kernel_stream);
+}
+
+template <typename F>
+void MemcpyDtoASyncBehavior(F memcpy_func, size_t width, size_t height,
+                            const bool should_sync, const hipStream_t kernel_stream = nullptr) {
+
+  const unsigned int flag = hipArrayDefault;
+  
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+  LinearAllocGuard2D<int> device_allocation(width, height);
+
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, array_allocation.ptr(), device_allocation.ptr()),
+                          should_sync, kernel_stream);
+}
+
+template <typename F>
+void MemcpyAtoDSyncBehavior(F memcpy_func, size_t width, size_t height,
+                            const bool should_sync, const hipStream_t kernel_stream = nullptr) {
+
+  const unsigned int flag = hipArrayDefault;
+  
+  LinearAllocGuard2D<int> device_allocation(width, height);
+  ArrayAllocGuard2D<int> array_allocation(width, height, flag);
+
+  MemcpySyncBehaviorCheck(std::bind(memcpy_func, device_allocation.ptr(), array_allocation.ptr()),
+                          should_sync, kernel_stream);
+}
