@@ -130,7 +130,7 @@ void Memcpy2DHostToDeviceShell(F memcpy_func, const hipStream_t kernel_stream = 
   PitchedMemorySet(src_host_alloc.ptr(), host_pitch, device_alloc.width_logical(),
                    device_alloc.height(), 1, f);
 
-  std::fill_n(dst_host_alloc.ptr(), device_alloc.width() * rows, 0);
+  std::fill_n(dst_host_alloc.ptr(), device_alloc.width_logical() * rows, 0);
 
   HIP_CHECK(memcpy_func(device_alloc.ptr(), device_alloc.pitch(), src_host_alloc.ptr(), host_pitch,
                         device_alloc.width(), device_alloc.height(), kind));
@@ -247,8 +247,10 @@ template <bool should_synchronize, typename F>
 void Memcpy2DZeroWidthHeight(F memcpy_func, const hipStream_t stream = nullptr) {
   constexpr size_t cols = 63;
   constexpr size_t rows = 64;
+
   const auto [width_mult, height_mult] =
       GENERATE(std::make_pair(0, 1), std::make_pair(1, 0), std::make_pair(0, 0));
+
   SECTION("Device to Host") {
     LinearAllocGuard2D<uint8_t> device_alloc(cols, rows);
     LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, device_alloc.width() * rows);
@@ -265,6 +267,7 @@ void Memcpy2DZeroWidthHeight(F memcpy_func, const hipStream_t stream = nullptr) 
     ArrayFindIfNot(host_alloc.ptr(), static_cast<uint8_t>(42),
                    device_alloc.width_logical() * device_alloc.height());
   }
+
   SECTION("Device to Device") {
     LinearAllocGuard2D<uint8_t> src_alloc(cols, rows);
     LinearAllocGuard2D<uint8_t> dst_alloc(cols, rows);
@@ -284,6 +287,7 @@ void Memcpy2DZeroWidthHeight(F memcpy_func, const hipStream_t stream = nullptr) 
     ArrayFindIfNot(host_alloc.ptr(), static_cast<uint8_t>(42),
                    dst_alloc.width_logical() * dst_alloc.height());
   }
+
   SECTION("Host to Device") {
     LinearAllocGuard2D<uint8_t> device_alloc(cols, rows);
     LinearAllocGuard<uint8_t> src_host_alloc(LinearAllocs::hipHostMalloc,
@@ -305,6 +309,7 @@ void Memcpy2DZeroWidthHeight(F memcpy_func, const hipStream_t stream = nullptr) 
     ArrayFindIfNot(dst_host_alloc.ptr(), static_cast<uint8_t>(42),
                    device_alloc.width_logical() * device_alloc.height());
   }
+
   SECTION("Host to Host") {
     const auto alloc_size = cols * rows;
     LinearAllocGuard<uint8_t> src_alloc(LinearAllocs::hipHostMalloc, alloc_size);
@@ -341,6 +346,14 @@ constexpr auto MemTypeArray() {
   return hipMemoryTypeArray;
 #else
   return CU_MEMORYTYPE_ARRAY;
+#endif
+}
+
+constexpr auto MemTypeUnified() {
+#if HT_AMD
+  return hipMemoryTypeUnified;
+#else
+  return CU_MEMORYTYPE_UNIFIED;
 #endif
 }
 

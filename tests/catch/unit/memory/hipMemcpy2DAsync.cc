@@ -34,28 +34,29 @@ TEST_CASE("Unit_hipMemcpy2DAsync_Positive_Basic") {
   const hipStream_t stream = stream_guard.stream();
 
   SECTION("Device to Host") {
-    Memcpy2DDeviceToHostShell<true>(
-        std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream));
+    Memcpy2DDeviceToHostShell<true>(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream),
+                                    stream);
   }
 
   SECTION("Device to Device") {
     SECTION("Peer access disabled") {
       Memcpy2DDeviceToDeviceShell<true, false>(
-          std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream));
+          std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream), stream);
     }
     SECTION("Peer access enabled") {
       Memcpy2DDeviceToDeviceShell<true, true>(
-          std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream));
+          std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream), stream);
     }
   }
 
   SECTION("Host to Device") {
-    Memcpy2DHostToDeviceShell<true>(
-        std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream));
+    Memcpy2DHostToDeviceShell<true>(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream),
+                                    stream);
   }
 
   SECTION("Host to Host") {
-    Memcpy2DHostToHostShell<true>(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream));
+    Memcpy2DHostToHostShell<true>(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, stream),
+                                  stream);
   }
 }
 

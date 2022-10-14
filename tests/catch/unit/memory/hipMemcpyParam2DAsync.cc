@@ -27,8 +27,9 @@ THE SOFTWARE.
 #include <utils.hh>
 
 TEST_CASE("Unit_hipMemcpyParam2DAsync_Positive_Basic") {
-  using namespace std::placeholders;
   constexpr bool async = true;
+
+  using namespace std::placeholders;
 
   const auto stream_type = GENERATE(Streams::nullstream, Streams::perThread, Streams::created);
   const StreamGuard stream_guard(stream_type);
@@ -36,33 +37,39 @@ TEST_CASE("Unit_hipMemcpyParam2DAsync_Positive_Basic") {
 
   SECTION("Device to Host") {
     Memcpy2DDeviceToHostShell<async>(std::bind(MemcpyParam2DAdapter<hipMemcpyDeviceToHost, async>(),
-                                               _1, _2, _3, _4, _5, _6, _7, stream));
+                                               _1, _2, _3, _4, _5, _6, _7, stream),
+                                     stream);
   }
   SECTION("Device to Device") {
     SECTION("Peer access disabled") {
       Memcpy2DDeviceToDeviceShell<async, false>(
           std::bind(MemcpyParam2DAdapter<hipMemcpyDeviceToDevice, async>(), _1, _2, _3, _4, _5, _6,
-                    _7, stream));
+                    _7, stream),
+          stream);
     }
     SECTION("Peer access enabled") {
       Memcpy2DDeviceToDeviceShell<async, true>(
           std::bind(MemcpyParam2DAdapter<hipMemcpyDeviceToDevice, async>(), _1, _2, _3, _4, _5, _6,
-                    _7, stream));
+                    _7, stream),
+          stream);
     }
   }
   SECTION("Host to Device") {
     Memcpy2DHostToDeviceShell<async>(std::bind(MemcpyParam2DAdapter<hipMemcpyHostToDevice, async>(),
-                                               _1, _2, _3, _4, _5, _6, _7, stream));
+                                               _1, _2, _3, _4, _5, _6, _7, stream),
+                                     stream);
   }
   SECTION("Host to Host") {
     Memcpy2DHostToHostShell<async>(std::bind(MemcpyParam2DAdapter<hipMemcpyHostToHost, async>(), _1,
-                                             _2, _3, _4, _5, _6, _7, stream));
+                                             _2, _3, _4, _5, _6, _7, stream),
+                                   stream);
   }
 }
 
 TEST_CASE("Unit_hipMemcpyParam2DAsync_Positive_Synchronization_Behavior") {
-  using namespace std::placeholders;
   constexpr bool async = true;
+
+  using namespace std::placeholders;
 
   HIP_CHECK(hipDeviceSynchronize());
 

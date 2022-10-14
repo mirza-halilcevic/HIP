@@ -92,15 +92,12 @@ template <typename T> class LinearAllocGuard {
 };
 
 template <typename T> class LinearAllocGuardMultiDim {
-  protected:
-  LinearAllocGuardMultiDim(hipExtent extent)
-  : extent_{extent} {}
+ protected:
+  LinearAllocGuardMultiDim(hipExtent extent) : extent_{extent} {}
 
-  ~LinearAllocGuardMultiDim() {
-    static_cast<void>(hipFree(pitched_ptr_.ptr));
-  }
-  
-  public:
+  ~LinearAllocGuardMultiDim() { static_cast<void>(hipFree(pitched_ptr_.ptr)); }
+
+ public:
   T* ptr() const { return reinterpret_cast<T*>(pitched_ptr_.ptr); };
 
   size_t pitch() const { return pitched_ptr_.pitch; }
@@ -115,17 +112,17 @@ template <typename T> class LinearAllocGuardMultiDim {
 
   size_t height() const { return extent_.height; }
 
-  public:
+ public:
   hipPitchedPtr pitched_ptr_;
   const hipExtent extent_;
 };
 
 template <typename T> class LinearAllocGuard2D : public LinearAllocGuardMultiDim<T> {
-  public:
-  LinearAllocGuard2D(const size_t width_logical, const size_t height) 
-  : LinearAllocGuardMultiDim<T>{make_hipExtent(width_logical * sizeof(T), height, 1)}
-  {
-    HIP_CHECK(hipMallocPitch(&this->pitched_ptr_.ptr, &this->pitched_ptr_.pitch, this->extent_.width, this->extent_.height));
+ public:
+  LinearAllocGuard2D(const size_t width_logical, const size_t height)
+      : LinearAllocGuardMultiDim<T>{make_hipExtent(width_logical * sizeof(T), height, 1)} {
+    HIP_CHECK(hipMallocPitch(&this->pitched_ptr_.ptr, &this->pitched_ptr_.pitch,
+                             this->extent_.width, this->extent_.height));
   }
 
   LinearAllocGuard2D(const LinearAllocGuard2D&) = delete;
@@ -133,10 +130,13 @@ template <typename T> class LinearAllocGuard2D : public LinearAllocGuardMultiDim
 };
 
 template <typename T> class LinearAllocGuard3D : public LinearAllocGuardMultiDim<T> {
-  public:
+ public:
   LinearAllocGuard3D(const size_t width_logical, const size_t height, const size_t depth)
-  : LinearAllocGuardMultiDim<T>{make_hipExtent(width_logical * sizeof(T), height, depth)}
-  {
+      : LinearAllocGuardMultiDim<T>{make_hipExtent(width_logical * sizeof(T), height, depth)} {
+    HIP_CHECK(hipMalloc3D(&this->pitched_ptr_, this->extent_));
+  }
+
+  LinearAllocGuard3D(const hipExtent extent) : LinearAllocGuardMultiDim<T>(extent) {
     HIP_CHECK(hipMalloc3D(&this->pitched_ptr_, this->extent_));
   }
 

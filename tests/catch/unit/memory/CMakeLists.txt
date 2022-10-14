@@ -27,7 +27,9 @@ set(TEST_SRC
     hipMemcpy2DToArray.cc
     hipMemcpy2DToArrayAsync.cc
     hipMemcpy3D.cc
+    hipMemcpy3D_old.cc
     hipMemcpy3DAsync.cc
+    hipMemcpy3DAsync_old.cc
     hipMemcpyParam2D_old.cc
     hipMemcpyParam2D.cc
     hipMemcpyParam2DAsync_old.cc
@@ -88,7 +90,9 @@ set(TEST_SRC
     hipArrayCreate.cc
     hipArray3DCreate.cc
     hipDrvMemcpy3D.cc
+    hipDrvMemcpy3D_old.cc
     hipDrvMemcpy3DAsync.cc
+    hipDrvMemcpy3DAsync_old.cc
     hipPointerGetAttribute.cc
     hipDrvPtrGetAttributes.cc
     hipMallocMngdMultiThread.cc
@@ -110,7 +114,9 @@ set(TEST_SRC
     hipMemcpy2DToArray.cc
     hipMemcpy2DToArrayAsync.cc
     hipMemcpy3D.cc
+    hipMemcpy3D_old.cc
     hipMemcpy3DAsync.cc
+    hipMemcpy3DAsync_old.cc
     hipMemcpyParam2D_old.cc
     hipMemcpyParam2D.cc
     hipMemcpyParam2DAsync_old.cc
@@ -168,7 +174,9 @@ set(TEST_SRC
     hipArrayCreate.cc
     hipArray3DCreate.cc
     hipDrvMemcpy3D.cc
+    hipDrvMemcpy3D_old.cc
     hipDrvMemcpy3DAsync.cc
+    hipDrvMemcpy3DAsync_old.cc
     hipPointerGetAttribute.cc
     hipDrvPtrGetAttributes.cc
     hipMemPrefetchAsync.cc
