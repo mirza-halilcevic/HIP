@@ -100,7 +100,7 @@ template <typename T> class LinearAllocGuardMultiDim {
   ~LinearAllocGuardMultiDim() {
     static_cast<void>(hipFree(pitched_ptr_.ptr));
   }
-  
+
   public:
   T* ptr() const { return reinterpret_cast<T*>(pitched_ptr_.ptr); };
 
@@ -145,6 +145,8 @@ template <typename T> class LinearAllocGuard3D : public LinearAllocGuardMultiDim
   LinearAllocGuard3D(LinearAllocGuard3D&&) = delete;
 
   size_t depth() const { return this->extent_.depth; }
+};
+
 template <typename T> class ArrayAllocGuardDrv {
   protected:
   ArrayAllocGuardDrv(const size_t width, const size_t height)

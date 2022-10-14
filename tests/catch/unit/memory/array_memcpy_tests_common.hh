@@ -55,7 +55,7 @@ void MemcpyAtoHShell(F memcpy_func, size_t width, const hipStream_t kernel_strea
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
 
-  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+  ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count);
 }
 
 template <bool should_synchronize, typename T, typename F>
@@ -84,7 +84,7 @@ void MemcpyAto2DHostShell(F memcpy_func, size_t width, size_t height, const hipS
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
 
-  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+  ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count);
 }
 
 template <bool should_synchronize, bool enable_peer_access, typename T, typename F>
@@ -139,7 +139,7 @@ void Memcpy2DDeviceFromAShell(F memcpy_func, size_t width, size_t height, const 
     HIP_CHECK(hipDeviceDisablePeerAccess(dst_device));
   }
 
-  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+  ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count);
 }
 
 template <bool should_synchronize, typename T, typename F>
@@ -169,7 +169,7 @@ void MemcpyHtoAShell(F memcpy_func, size_t width, const hipStream_t kernel_strea
   HIP_CHECK(hipMemcpy2DFromArray(host_allocation.host_ptr(), sizeof(T)*width, array_allocation.ptr(),
            0, 0, sizeof(T)*width, 1, hipMemcpyDeviceToHost));
 
-  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+  ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count);
 }
 
 template <bool should_synchronize, typename T, typename F>
@@ -200,7 +200,7 @@ void Memcpy2DHosttoAShell(F memcpy_func, size_t width, size_t height, const hipS
   HIP_CHECK(hipMemcpy2DFromArray(host_allocation.host_ptr(), sizeof(T)*width, array_allocation.ptr(),
            0, 0, sizeof(T)*width, height, hipMemcpyDeviceToHost));
 
-  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+  ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count);
 }
 
 template <bool should_synchronize, bool enable_peer_access, typename T, typename F>
@@ -230,10 +230,10 @@ void Memcpy2DDevicetoAShell(F memcpy_func, size_t width, size_t height, const hi
 
   LinearAllocGuard<T> host_allocation(LA::malloc, allocation_size);
   LinearAllocGuard2D<T> device_allocation(width, height);
-  //HIP_CHECK(hipSetDevice(dst_device));
+  HIP_CHECK(hipSetDevice(dst_device));
   ArrayAllocGuard2D<T> array_allocation(width, height, flag);
 
-  //HIP_CHECK(hipSetDevice(src_device));
+  HIP_CHECK(hipSetDevice(src_device));
   const auto element_count = allocation_size / sizeof(T);
   constexpr int fill_value = 41;
   std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
@@ -257,7 +257,7 @@ void Memcpy2DDevicetoAShell(F memcpy_func, size_t width, size_t height, const hi
     HIP_CHECK(hipDeviceDisablePeerAccess(dst_device));
   }
 
-  REQUIRE(ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count) == true);
+  ArrayFindIfNot(host_allocation.host_ptr(), fill_value, element_count);
 }
 
 // Synchronization behavior checks
