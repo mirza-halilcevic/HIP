@@ -145,19 +145,80 @@ template <typename T> class LinearAllocGuard3D : public LinearAllocGuardMultiDim
   LinearAllocGuard3D(LinearAllocGuard3D&&) = delete;
 
   size_t depth() const { return this->extent_.depth; }
+template <typename T> class ArrayAllocGuardDrv {
+  protected:
+  ArrayAllocGuardDrv(const size_t width, const size_t height)
+  : width_{width}, height_{height} {}
+
+  ~ArrayAllocGuardDrv() {
+    // No Catch macros, don't want to possibly throw in the destructor
+    static_cast<void>(hipArrayDestroy(ptr_));
+  }
+
+  public:
+  hiparray ptr() { return ptr_; };
+
+  hiparray const ptr() const { return ptr_; };
+
+  size_t width() const { return width_; }
+
+  size_t height() const { return height_; }
+
+  public:
+  hiparray ptr_;
+  size_t width_;
+  size_t height_;
+};
+
+template <typename T> class ArrayAllocGuardDrv2D : public ArrayAllocGuardDrv<T> {
+  public:
+  ArrayAllocGuardDrv2D(const size_t width, const size_t height)
+  : ArrayAllocGuardDrv<T>(width, height) {
+    HIP_ARRAY_DESCRIPTOR desc{};
+    using vec_info = vector_info<T>;
+    desc.Format = vec_info::format;
+    desc.NumChannels = vec_info::size;
+    desc.Width = this->width_;
+    desc.Height = this->height_;
+    HIP_CHECK(hipArrayCreate(&this->ptr_, &desc));
+  }
+
+  ArrayAllocGuardDrv2D(const ArrayAllocGuardDrv2D&) = delete;
+  ArrayAllocGuardDrv2D(ArrayAllocGuardDrv2D&&) = delete;
+};
+
+template <typename T> class ArrayAllocGuardDrv3D : public ArrayAllocGuardDrv<T> {
+  public:
+  ArrayAllocGuardDrv3D(const size_t width, const size_t height, const size_t depth, unsigned int flags = 0)
+  : ArrayAllocGuardDrv<T>(width, height), depth_{depth} {
+    HIP_ARRAY3D_DESCRIPTOR desc{};
+    using vec_info = vector_info<T>;
+    desc.Format = vec_info::format;
+    desc.NumChannels = vec_info::size;
+    desc.Width = this->width_;
+    desc.Height = this->height_;
+    desc.Depth = depth_;
+    desc.Flags = flags;
+    HIP_CHECK(hipArray3DCreate(&this->ptr_, &desc));
+  }
+
+  ArrayAllocGuardDrv3D(const ArrayAllocGuardDrv3D&) = delete;
+  ArrayAllocGuardDrv3D(ArrayAllocGuardDrv3D&&) = delete;
+
+  size_t depth() const { return depth_; }
+
+  public:
+  size_t depth_;
+};
+
 template <typename T> class ArrayAllocGuard {
   protected:
-  ArrayAllocGuard(bool drv_alloc_type)
-  : drv_alloc_type_{drv_alloc_type} {}
+  ArrayAllocGuard(const size_t width, const size_t height)
+  : width_{width}, height_{height} {}
 
   ~ArrayAllocGuard() {
     // No Catch macros, don't want to possibly throw in the destructor
-    if (drv_alloc_type_ == false) {
-      // Cast to void to suppress nodiscard warnings
-      static_cast<void>(hipFreeArray(ptr_));
-    } else {
-      static_cast<void>(hipArrayDestroy(ptr_));
-    }
+    static_cast<void>(hipFreeArray(ptr_));
   }
 
   public:
@@ -166,25 +227,16 @@ template <typename T> class ArrayAllocGuard {
 
   public:
   hipArray_t ptr_;
-  const bool drv_alloc_type_;
+  size_t width_;
+  size_t height_;
 };
 
 template <typename T> class ArrayAllocGuard2D : public ArrayAllocGuard<T> {
   public:
-  ArrayAllocGuard2D(const size_t width, const size_t height, const unsigned int flags = 0u, const bool drv_alloc_type = false)
-  : ArrayAllocGuard<T>(drv_alloc_type) {
-    if (this->drv_alloc_type_ == false) {
-      hipChannelFormatDesc desc = hipCreateChannelDesc<T>();
-      HIP_CHECK(hipMallocArray(&this->ptr_, &desc, static_cast<unsigned int>(width), static_cast<unsigned int>(height), flags));
-    } else {
-      HIP_ARRAY_DESCRIPTOR desc{};
-      using vec_info = vector_info<T>;
-      desc.Format = vec_info::format;
-      desc.NumChannels = vec_info::size;
-      desc.Width = width;
-      desc.Height = height;
-      HIP_CHECK(hipArrayCreate(&this->ptr_, &desc));
-    }
+  ArrayAllocGuard2D(const size_t width, const size_t height, const unsigned int flags = 0u)
+  : ArrayAllocGuard<T>(width, height) {
+    hipChannelFormatDesc desc = hipCreateChannelDesc<T>();
+    HIP_CHECK(hipMallocArray(&this->ptr_, &desc, this->width_, this->height_, flags));
   }
 
   ArrayAllocGuard2D(const ArrayAllocGuard2D&) = delete;
@@ -193,26 +245,19 @@ template <typename T> class ArrayAllocGuard2D : public ArrayAllocGuard<T> {
 
 template <typename T> class ArrayAllocGuard3D : public ArrayAllocGuard<T> {
   public:
-  ArrayAllocGuard3D(const size_t width, const size_t height, const size_t depth, const unsigned int flags = 0u, const bool drv_alloc_type = false)
-  : ArrayAllocGuard<T>(drv_alloc_type) {
-    if (this->drv_alloc_type_ == false) {
-      hipChannelFormatDesc desc = hipCreateChannelDesc<T>();
-      HIP_CHECK(hipMalloc3DArray(&this->ptr_, &desc, make_hipExtent(width, height, depth), flags));
-    } else {
-      HIP_ARRAY3D_DESCRIPTOR desc{};
-      using vec_info = vector_info<T>;
-      desc.Format = vec_info::format;
-      desc.NumChannels = vec_info::size;
-      desc.Width = width;
-      desc.Height = height;
-      desc.Depth = depth;
-      desc.Flags = flags;
-      HIP_CHECK(hipArray3DCreate(&this->ptr_, &desc));
-    }
+  ArrayAllocGuard3D(const size_t width, const size_t height, const size_t depth, const unsigned int flags = 0u)
+  : ArrayAllocGuard<T>(width, height), depth_{depth} {
+    hipChannelFormatDesc desc = hipCreateChannelDesc<T>();
+    HIP_CHECK(hipMalloc3DArray(&this->ptr_, &desc, make_hipExtent(this->width_, this->height_, depth_), flags));
   }
 
   ArrayAllocGuard3D(const ArrayAllocGuard3D&) = delete;
   ArrayAllocGuard3D(ArrayAllocGuard3D&&) = delete;
+
+  size_t depth() const { return depth_; }
+
+  public:
+  size_t depth_;
 };
 
 enum class Streams { nullstream, perThread, created };
