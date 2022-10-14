@@ -344,9 +344,11 @@ constexpr auto MemTypeArray() {
 #endif
 }
 
-template <hipMemcpyKind kind, bool async = false> constexpr auto MemcpyParam2DAdapter() {
-  return [](void* dst, size_t dpitch, const void* src, size_t spitch, size_t width, size_t height,
-            hipMemcpyKind, hipStream_t stream = nullptr) {
+template <hipMemcpyKind kind, bool async = false>
+constexpr auto MemcpyParam2DAdapter(const hipExtent src_offset = {0, 0, 0},
+                                    const hipExtent dst_offset = {0, 0, 0}) {
+  return [=](void* dst, size_t dpitch, const void* src, size_t spitch, size_t width, size_t height,
+             hipMemcpyKind, hipStream_t stream = nullptr) {
     hip_Memcpy2D params = {0};
     if constexpr (kind == hipMemcpyDeviceToHost) {
       params.dstMemoryType = MemTypeHost();
@@ -371,11 +373,15 @@ template <hipMemcpyKind kind, bool async = false> constexpr auto MemcpyParam2DAd
     } else {
       static_assert(sizeof(kind), "Invalid hipMemcpyKind enumerator");
     }
-
     params.dstPitch = dpitch;
     params.srcPitch = spitch;
     params.WidthInBytes = width;
     params.Height = height;
+    params.srcXInBytes = src_offset.width;
+    params.srcY = src_offset.height;
+    params.dstXInBytes = dst_offset.width;
+    params.dstY = dst_offset.height;
+
     if constexpr (async) {
       return hipMemcpyParam2DAsync(&params, stream);
     } else {
@@ -386,16 +392,18 @@ template <hipMemcpyKind kind, bool async = false> constexpr auto MemcpyParam2DAd
 
 template <bool async = false>
 std::function<decltype(hipMemcpy2D)> MemcpyParam2DAdapter(const hipMemcpyKind kind,
-                                                          hipStream_t stream = nullptr) {
+                                                          hipStream_t stream = nullptr,
+                                                          const hipExtent src_offset = {0, 0, 0},
+                                                          const hipExtent dst_offset = {0, 0, 0}) {
   switch (kind) {
     case hipMemcpyDeviceToHost:
-      return MemcpyParam2DAdapter<hipMemcpyDeviceToHost, async>();
+      return MemcpyParam2DAdapter<hipMemcpyDeviceToHost, async>(src_offset, dst_offset);
     case hipMemcpyDeviceToDevice:
-      return MemcpyParam2DAdapter<hipMemcpyDeviceToDevice, async>();
+      return MemcpyParam2DAdapter<hipMemcpyDeviceToDevice, async>(src_offset, dst_offset);
     case hipMemcpyHostToDevice:
-      return MemcpyParam2DAdapter<hipMemcpyHostToDevice, async>();
+      return MemcpyParam2DAdapter<hipMemcpyHostToDevice, async>(src_offset, dst_offset);
     case hipMemcpyHostToHost:
-      return MemcpyParam2DAdapter<hipMemcpyHostToHost, async>();
+      return MemcpyParam2DAdapter<hipMemcpyHostToHost, async>(src_offset, dst_offset);
     default:
       assert("Invalid hipMemcpyKind enumerator");
       return hipMemcpy2D;

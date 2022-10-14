@@ -54,9 +54,7 @@ TEST_CASE("Unit_hipMemcpy2D_Positive_Synchronization_Behavior") {
 }
 
 
-TEST_CASE("Unit_hipMemcpy2D_Positive_Parameters") {
-  Memcpy2DZeroWidthHeight<false>(hipMemcpy2D);
-}
+TEST_CASE("Unit_hipMemcpy2D_Positive_Parameters") { Memcpy2DZeroWidthHeight<false>(hipMemcpy2D); }
 
 TEST_CASE("Unit_hipMemcpy2D_Negative_Parameters") {
   constexpr size_t cols = 128;
@@ -79,6 +77,20 @@ TEST_CASE("Unit_hipMemcpy2D_Negative_Parameters") {
     SECTION("spitch < width") {
       HIP_CHECK_ERROR(hipMemcpy2D(dst, dpitch, src, width - 1, width, height, kind),
                       hipErrorInvalidPitchValue);
+    }
+    SECTION("dpitch > max pitch") {
+      int attr = 0;
+      HIP_CHECK(hipDeviceGetAttribute(&attr, hipDeviceAttributeMaxPitch, 0));
+      HIP_CHECK_ERROR(
+          hipMemcpy2D(dst, static_cast<size_t>(attr) + 1, src, spitch, width, height, kind),
+          hipErrorInvalidValue);
+    }
+    SECTION("spitch > max pitch") {
+      int attr = 0;
+      HIP_CHECK(hipDeviceGetAttribute(&attr, hipDeviceAttributeMaxPitch, 0));
+      HIP_CHECK_ERROR(
+          hipMemcpy2D(dst, dpitch, src, static_cast<size_t>(attr) + 1, width, height, kind),
+          hipErrorInvalidValue);
     }
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(

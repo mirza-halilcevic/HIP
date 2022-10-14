@@ -74,8 +74,8 @@ TEST_CASE("Unit_hipMemcpy2DAsync_Positive_Synchronization_Behavior") {
         std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, nullptr), true);
   }
   SECTION("Device to Pinned Host") {
-    Memcpy2DDtoHPinnedSyncBehavior(
-        std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, nullptr), false);
+    Memcpy2DDtoHPinnedSyncBehavior(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, nullptr),
+                                   false);
   }
 
   SECTION("Device to Device") {
@@ -87,6 +87,11 @@ TEST_CASE("Unit_hipMemcpy2DAsync_Positive_Synchronization_Behavior") {
     Memcpy2DHtoHSyncBehavior(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, nullptr),
                              true);
   }
+}
+
+TEST_CASE("Unit_hipMemcpy2DAsync_Positive_Parameters") {
+  using namespace std::placeholders;
+  Memcpy2DZeroWidthHeight<false>(std::bind(hipMemcpy2DAsync, _1, _2, _3, _4, _5, _6, _7, nullptr));
 }
 
 TEST_CASE("Unit_hipMemcpy2DAsync_Negative_Parameters") {
@@ -110,6 +115,20 @@ TEST_CASE("Unit_hipMemcpy2DAsync_Negative_Parameters") {
     SECTION("spitch < width") {
       HIP_CHECK_ERROR(hipMemcpy2DAsync(dst, dpitch, src, width - 1, width, height, kind, nullptr),
                       hipErrorInvalidPitchValue);
+    }
+    SECTION("dpitch > max pitch") {
+      int attr = 0;
+      HIP_CHECK(hipDeviceGetAttribute(&attr, hipDeviceAttributeMaxPitch, 0));
+      HIP_CHECK_ERROR(hipMemcpy2DAsync(dst, static_cast<size_t>(attr) + 1, src, spitch, width,
+                                       height, kind, nullptr),
+                      hipErrorInvalidValue);
+    }
+    SECTION("spitch > max pitch") {
+      int attr = 0;
+      HIP_CHECK(hipDeviceGetAttribute(&attr, hipDeviceAttributeMaxPitch, 0));
+      HIP_CHECK_ERROR(hipMemcpy2DAsync(dst, dpitch, src, static_cast<size_t>(attr) + 1, width,
+                                       height, kind, nullptr),
+                      hipErrorInvalidValue);
     }
     SECTION("Invalid MemcpyKind") {
       HIP_CHECK_ERROR(hipMemcpy2DAsync(dst, dpitch, src, spitch, width, height,

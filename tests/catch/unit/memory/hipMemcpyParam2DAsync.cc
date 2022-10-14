@@ -108,32 +108,68 @@ TEST_CASE("Unit_hipMemcpyParam2DAsync_Negative_Parameters") {
   constexpr auto NegativeTests = [](void* dst, size_t dpitch, const void* src, size_t spitch,
                                     size_t width, size_t height, hipMemcpyKind kind) {
     SECTION("dst == nullptr") {
-      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(nullptr, dpitch, src, spitch, width, height, kind),
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(nullptr, dpitch, src, spitch, width,
+                                                                height, kind),
                       hipErrorInvalidValue);
     }
     SECTION("src == nullptr") {
-      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, dpitch, nullptr, spitch, width, height, kind),
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, dpitch, nullptr, spitch, width,
+                                                                height, kind),
                       hipErrorInvalidValue);
     }
-    SECTION("dpitch < width") {
-      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, width - 1, src, spitch, width, height, kind),
-                      hipErrorInvalidPitchValue);
+    SECTION("dstPitch < WidthInBytes") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, width - 1, src, spitch, width,
+                                                                height, kind),
+                      hipErrorInvalidValue);
     }
-    SECTION("spitch < width") {
-      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, dpitch, src, width - 1, width, height, kind),
-                      hipErrorInvalidPitchValue);
+    SECTION("srcPitch < WidthInBytes") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, dpitch, src, width - 1, width,
+                                                                height, kind),
+                      hipErrorInvalidValue);
     }
-    SECTION("Invalid MemcpyKind") {
-      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr)(dst, dpitch, src, spitch, width, height,
-                                       static_cast<hipMemcpyKind>(-1)),
-                      hipErrorInvalidMemcpyDirection);
+    SECTION("dpitch > max pitch") {
+      int attr = 0;
+      HIP_CHECK(hipDeviceGetAttribute(&attr, hipDeviceAttributeMaxPitch, 0));
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind)(dst, static_cast<size_t>(attr) + 1, src,
+                                                       spitch, width, height, kind),
+                      hipErrorInvalidValue);
+    }
+    SECTION("spitch > max pitch") {
+      int attr = 0;
+      HIP_CHECK(hipDeviceGetAttribute(&attr, hipDeviceAttributeMaxPitch, 0));
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind)(
+                          dst, dpitch, src, static_cast<size_t>(attr) + 1, width, height, kind),
+                      hipErrorInvalidValue);
+    }
+    SECTION("WidthInBytes + srcXInBytes > srcPitch") {
+      HIP_CHECK_ERROR(
+          MemcpyParam2DAdapter<true>(kind, nullptr, make_hipExtent(spitch - width + 1, 0, 0))(
+              dst, dpitch, src, spitch, width, height, kind),
+          hipErrorInvalidValue);
+    }
+    SECTION("WidthInBytes + dstXInBytes > dstPitch") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr, make_hipExtent(0, 0, 0),
+                                                 make_hipExtent(dpitch - width + 1, 0, 0))(
+                          dst, dpitch, src, spitch, width, height, kind),
+                      hipErrorInvalidValue);
+    }
+    SECTION("srcY out of bounds") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr, make_hipExtent(0, 1, 0))(
+                          dst, dpitch, src, spitch, width, height, kind),
+                      hipErrorInvalidValue);
+    }
+    SECTION("dstY out of bounds") {
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, nullptr, make_hipExtent(0, 0, 0),
+                                                 make_hipExtent(0, 1, 0))(dst, dpitch, src, spitch,
+                                                                          width, height, kind),
+                      hipErrorInvalidValue);
     }
     SECTION("Invalid stream") {
       StreamGuard stream_guard(Streams::created);
       HIP_CHECK(hipStreamDestroy(stream_guard.stream()));
-      HIP_CHECK_ERROR(
-          MemcpyParam2DAdapter<true>(kind, stream_guard.stream())(dst, dpitch, src, spitch, width, height, kind),
-          hipErrorContextIsDestroyed);
+      HIP_CHECK_ERROR(MemcpyParam2DAdapter<true>(kind, stream_guard.stream())(
+                          dst, dpitch, src, spitch, width, height, kind),
+                      hipErrorContextIsDestroyed);
     }
   };
 
