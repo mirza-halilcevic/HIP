@@ -59,7 +59,7 @@ void MemcpyAtoHShell(F memcpy_func, size_t width, const hipStream_t kernel_strea
 }
 
 template <bool should_synchronize, typename T, typename F>
-void MemcpyAto2DHostShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
+void Memcpy2DHostFromAShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
   using LA = LinearAllocs;
 
   const unsigned int flag = hipArrayDefault;
@@ -79,7 +79,7 @@ void MemcpyAto2DHostShell(F memcpy_func, size_t width, size_t height, const hipS
   HIP_CHECK(hipMemcpy2DToArray(array_allocation.ptr(), 0, 0, host_allocation.host_ptr(), sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
   std::fill_n(host_allocation.host_ptr(), element_count, 0);
 
-  HIP_CHECK(memcpy_func(host_allocation.host_ptr(), array_allocation.ptr()));
+  HIP_CHECK(memcpy_func(host_allocation.host_ptr(), sizeof(T) * width, array_allocation.ptr()));
   if (should_synchronize) {
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
@@ -125,7 +125,7 @@ void Memcpy2DDeviceFromAShell(F memcpy_func, size_t width, size_t height, const 
   HIP_CHECK(hipMemcpy2DToArray(array_allocation.ptr(), 0, 0, host_allocation.host_ptr(), sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
   std::fill_n(host_allocation.host_ptr(), element_count, 0);
 
-  HIP_CHECK(memcpy_func(device_allocation.ptr(), array_allocation.ptr()));
+  HIP_CHECK(memcpy_func(device_allocation.ptr(), sizeof(T) * width, array_allocation.ptr()));
   if (should_synchronize) {
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
@@ -174,7 +174,6 @@ void MemcpyHtoAShell(F memcpy_func, size_t width, const hipStream_t kernel_strea
 
 template <bool should_synchronize, typename T, typename F>
 void Memcpy2DHosttoAShell(F memcpy_func, size_t width, size_t height, const hipStream_t kernel_stream = nullptr) {
-//void MemcpyHToAShell(const hipStream_t kernel_stream = nullptr) {
   using LA = LinearAllocs;
   const unsigned int flag = hipArrayDefault;;
 
@@ -190,7 +189,7 @@ void Memcpy2DHosttoAShell(F memcpy_func, size_t width, size_t height, const hipS
   constexpr int fill_value = 41;
   std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
 
-  HIP_CHECK(memcpy_func(array_allocation.ptr(), host_allocation.host_ptr()));
+  HIP_CHECK(memcpy_func(array_allocation.ptr(), host_allocation.host_ptr(), sizeof(T) * width));
   if (should_synchronize) {
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
@@ -241,7 +240,7 @@ void Memcpy2DDevicetoAShell(F memcpy_func, size_t width, size_t height, const hi
   HIP_CHECK(hipMemcpy2D(device_allocation.ptr(), sizeof(T)*width, host_allocation.host_ptr(),
            sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
 
-  HIP_CHECK(memcpy_func(array_allocation.ptr(), device_allocation.ptr()));
+  HIP_CHECK(memcpy_func(array_allocation.ptr(), device_allocation.ptr(), sizeof(T) * width));
   if (should_synchronize) {
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
