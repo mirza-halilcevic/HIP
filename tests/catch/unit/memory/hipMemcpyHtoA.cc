@@ -43,7 +43,13 @@ TEST_CASE("Unit_hipMemcpyHtoA_Synchronization_Behavior") {
   MemcpyHtoASyncBehavior(std::bind(hipMemcpyHtoA, _1, 0, _2, allocation_size), width, height, true);
 }
 
-TEST_CASE("Unit_hipMemcpyHtoA_SizeCheck") {
+/*
+This testcase verifies the size 0 check of hipMemcpyHtoA API
+This is excluded for AMD as we have a bug already raised
+SWDEV-274683
+*/
+#if HT_NVIDIA
+TEST_CASE("Unit_hipMemcpyHtoA_ZeroCount") {
   const auto width = 1024;
   const auto height = 0;
   const auto allocation_size = width * sizeof(int);
@@ -65,6 +71,7 @@ TEST_CASE("Unit_hipMemcpyHtoA_SizeCheck") {
 
   ArrayFindIfNot(host_alloc.host_ptr(), static_cast<uint8_t>(42), width);
 }
+#endif
 
 TEST_CASE("Unit_hipMemcpyHtoA_Negative_Parameters") {
   using namespace std::placeholders;
