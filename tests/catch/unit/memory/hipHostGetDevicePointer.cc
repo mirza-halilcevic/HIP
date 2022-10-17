@@ -25,7 +25,7 @@ THE SOFTWARE.
 
 TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
   int* hPtr{nullptr};
-  int* dPtr = nullptr;
+  int* dPtr{nullptr};
   HIP_CHECK(hipHostMalloc(&hPtr, sizeof(int)));
 
   if (!DeviceAttributesSupport(0, hipDeviceAttributeCanMapHostMemory)) {
@@ -95,7 +95,7 @@ TEST_CASE("Unit_hipHostGetDevicePointer_UseCase") {
     HIP_CHECK(hipDeviceSynchronize());
     HIP_CHECK(hipHostUnregister(&res));
 
-    REQUIRE(*dPtr == value);
+    REQUIRE(res == value);
   }
 
   HIP_CHECK(hipHostFree(hPtr));

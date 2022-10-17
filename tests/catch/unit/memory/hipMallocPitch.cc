@@ -228,6 +228,21 @@ TEST_CASE("Unit_hipMallocPitch_Negative") {
   }
 }
 
+TEST_CASE("Unit_hipMallocPitch_Zero_Dims") {
+  void* ptr;
+  size_t pitch;
+
+  SECTION("width == 0") {
+    HIP_CHECK(hipMallocPitch(&ptr, &pitch, 0, 1));
+    REQUIRE(ptr == nullptr);
+  }
+
+  SECTION("height == 0") {
+    HIP_CHECK(hipMallocPitch(&ptr, &pitch, 1, 0));
+    REQUIRE(ptr == nullptr);
+  }
+}
+
 TEST_CASE("Unit_hipMemAllocPitch_Negative") {
   size_t pitch = 0;
   hipDeviceptr_t ptr{};
