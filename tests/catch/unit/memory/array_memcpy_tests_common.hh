@@ -25,7 +25,6 @@ THE SOFTWARE.
 #include <hip/hip_runtime_api.h>
 #include <utils.hh>
 #include <resource_guards.hh>
-#include <stdio.h>
 #include "hipArrayCommon.hh"
 #include "linear_memcpy_tests_common.hh"
 
