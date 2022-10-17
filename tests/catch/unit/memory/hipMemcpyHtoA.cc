@@ -43,6 +43,29 @@ TEST_CASE("Unit_hipMemcpyHtoA_Synchronization_Behavior") {
   MemcpyHtoASyncBehavior(std::bind(hipMemcpyHtoA, _1, 0, _2, allocation_size), width, height, true);
 }
 
+TEST_CASE("Unit_hipMemcpyHtoA_SizeCheck") {
+  const auto width = 1024;
+  const auto height = 0;
+  const auto allocation_size = width * sizeof(int);
+
+  const unsigned int flag = hipArrayDefault;
+
+  ArrayAllocGuard2D<int> array_alloc(width, height, flag);
+  LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, allocation_size);
+
+  int fill_value = 42;
+  std::fill_n(host_alloc.host_ptr(), width, fill_value);
+  HIP_CHECK(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, host_alloc.host_ptr(), sizeof(int)*width, sizeof(int)*width, 1, hipMemcpyHostToDevice));
+  fill_value = 41;
+  std::fill_n(host_alloc.host_ptr(), width, fill_value);
+  HIP_CHECK(hipMemcpyHtoA(array_alloc.ptr(), 0, host_alloc.ptr(), 0));
+
+  HIP_CHECK(hipMemcpy2DFromArray(host_alloc.host_ptr(), sizeof(int)*width, array_alloc.ptr(),
+           0, 0, sizeof(int)*width, 1, hipMemcpyDeviceToHost));
+
+  ArrayFindIfNot(host_alloc.host_ptr(), static_cast<uint8_t>(42), width);
+}
+
 TEST_CASE("Unit_hipMemcpyHtoA_Negative_Parameters") {
   using namespace std::placeholders;
 
