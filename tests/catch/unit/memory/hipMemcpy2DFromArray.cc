@@ -39,11 +39,21 @@ TEST_CASE("Unit_hipMemcpy2DFromArray_Default") {
   }
 
   SECTION("Array to device") {
-    Memcpy2DDeviceFromAShell<false, false, int>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height);
+    SECTION("Peer access disabled") {
+      Memcpy2DDeviceFromAShell<false, false, int>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height);
+    }
+    SECTION("Peer access enabled") {
+      Memcpy2DDeviceFromAShell<false, true, int>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height);
+    }
   }
 
   SECTION("Array to device with default kind") {
-    Memcpy2DDeviceFromAShell<false, false, int>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), height, hipMemcpyDefault), width, height);
+    SECTION("Peer access disabled") {
+      Memcpy2DDeviceFromAShell<false, false, int>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), height, hipMemcpyDefault), width, height);
+    }
+    SECTION("Peer access enabled") {
+      Memcpy2DDeviceFromAShell<false, true, int>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), height, hipMemcpyDefault), width, height);
+    }
   }
 }
 

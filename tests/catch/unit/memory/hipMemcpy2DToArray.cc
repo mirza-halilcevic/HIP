@@ -39,12 +39,23 @@ TEST_CASE("Unit_hipMemcpy2DToArray_Default") {
   }
 
   SECTION("Device to Array") {
-    Memcpy2DDevicetoAShell<false, false, int>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height);
+    SECTION("Peer access disabled") {
+      Memcpy2DDevicetoAShell<false, false, int>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height);
+    }
+      SECTION("Peer access enabled") {
+      Memcpy2DDevicetoAShell<false, true, int>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height);
+    }
   }
 
   SECTION("Device to Array with default kind") {
-    Memcpy2DDevicetoAShell
-    <false, false, int>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault), width, height);
+    SECTION("Peer access disabled") {
+      Memcpy2DDevicetoAShell
+      <false, false, int>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault), width, height);
+    }
+    SECTION("Peer access enabled") {
+      Memcpy2DDevicetoAShell
+      <false, true, int>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault), width, height);
+    }
   }
 }
 
@@ -56,7 +67,6 @@ TEST_CASE("Unit_hipMemcpy2DToArray_Synchronization_Behavior") {
   SECTION("Host to Array") {
     const auto width = GENERATE(16, 32, 48);
     const auto height = GENERATE(16, 32, 48);
-    const auto allocation_size = width * height * sizeof(int);
   
     MemcpyHtoASyncBehavior(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, width * sizeof(int), width * sizeof(int), height, hipMemcpyHostToDevice), width, height, true);
   }
@@ -64,9 +74,8 @@ TEST_CASE("Unit_hipMemcpy2DToArray_Synchronization_Behavior") {
   SECTION("Device to Array") {
     const auto width = GENERATE(16, 32, 48);
     const auto height = GENERATE(16, 32, 48);
-    const auto allocation_size = width * height * sizeof(int);
   
-    MemcpyDtoASyncBehavior(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height, true);
+    MemcpyDtoASyncBehavior(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice), width, height, false);
   }
 }
 
