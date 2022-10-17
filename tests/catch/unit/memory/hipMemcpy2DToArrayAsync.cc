@@ -35,30 +35,30 @@ TEST_CASE("Unit_hipMemcpy2DToArrayAsync_Default") {
   const auto height = GENERATE(1, 16, 32, 48);
 
   SECTION("Host to Array") {
-    Memcpy2DHosttoAShell<false, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyHostToDevice, stream), width, height, stream);
+    Memcpy2DHosttoAShell<true, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyHostToDevice, stream), width, height, stream);
   }
 
   SECTION("Host to Array with default kind") {
-    Memcpy2DHosttoAShell<false, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault, stream), width, height, stream);
+    Memcpy2DHosttoAShell<true, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault, stream), width, height, stream);
   }
 
   SECTION("Device to Array") {
     SECTION("Peer access disabled") {
-      Memcpy2DDevicetoAShell<false, false, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice, stream), width, height, stream);
+      Memcpy2DDevicetoAShell<true, false, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice, stream), width, height, stream);
     }
     SECTION("Peer access enabled") {
-      Memcpy2DDevicetoAShell<false, true, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice, stream), width, height, stream);
+      Memcpy2DDevicetoAShell<true, true, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDeviceToDevice, stream), width, height, stream);
     }
   }
 
   SECTION("Device to Array with default kind") {
     SECTION("Peer access disabled") {
       Memcpy2DDevicetoAShell
-      <false, false, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault, stream), width, height, stream);
+      <true, false, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault, stream), width, height, stream);
     }
     SECTION("Peer access enabled") {
       Memcpy2DDevicetoAShell
-      <false, true, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault, stream), width, height, stream);
+      <true, true, int>(std::bind(hipMemcpy2DToArrayAsync, _1, 0, 0, _2, _3, width * sizeof(int), height, hipMemcpyDefault, stream), width, height, stream);
     }
   }
 }
