@@ -146,15 +146,15 @@ TEST_CASE("Unit_hipMemcpy2DFromArray_Negative_Parameters") {
       HIP_CHECK_ERROR(hipMemcpy2DFromArray(device_alloc.ptr(), width * sizeof(int) - 10, array_alloc.ptr(), 0, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidPitchValue);
     }
     SECTION("Offset + width/height overflows") {
-      HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 1, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
-      HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 1, width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
+      HIP_CHECK_ERROR(hipMemcpy2DFromArray(device_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 1, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
+      HIP_CHECK_ERROR(hipMemcpy2DFromArray(device_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 1, width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
     }
     SECTION("Width/height overflows") {
-      HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int) + 1, height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
-      HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int), height + 1, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
+      HIP_CHECK_ERROR(hipMemcpy2DFromArray(device_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int) + 1, height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
+      HIP_CHECK_ERROR(hipMemcpy2DFromArray(device_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int), height + 1, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
     }
     SECTION("Memcpy kind is invalid") {
-      HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int), height, static_cast<hipMemcpyKind>(-1)), hipErrorInvalidMemcpyDirection);
+      HIP_CHECK_ERROR(hipMemcpy2DFromArray(device_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int), height, static_cast<hipMemcpyKind>(-1)), hipErrorInvalidMemcpyDirection);
     }
   }
 }
