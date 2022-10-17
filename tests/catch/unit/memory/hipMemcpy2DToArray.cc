@@ -24,7 +24,7 @@ THE SOFTWARE.
 #include <utils.hh>
 #include <resource_guards.hh>
 
-TEST_CASE("Unit_hipMemcpy2DToArray_Default") { 
+TEST_CASE("Unit_hipMemcpy2DToArray_Default") {
   using namespace std::placeholders;
 
   const auto width = GENERATE(16, 32, 48);
@@ -84,7 +84,7 @@ TEST_CASE("Unit_hipMemcpy2DToArray_ZeroWidthHeight") {
   const auto width = 16;
   const auto height = 16;
 
-  SECTION("Array to host") {  
+  SECTION("Array to host") { 
     SECTION("Height is 0") {
       Memcpy2DToArrayZeroWidthHeight<false>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), 0, hipMemcpyHostToDevice), width, height);
     }
@@ -92,7 +92,7 @@ TEST_CASE("Unit_hipMemcpy2DToArray_ZeroWidthHeight") {
       Memcpy2DToArrayZeroWidthHeight<false>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, 0, height, hipMemcpyHostToDevice), width, height);
     }
   }
-  SECTION("Array to device") {  
+  SECTION("Array to device") { 
     SECTION("Height is 0") {
       Memcpy2DToArrayZeroWidthHeight<false>(std::bind(hipMemcpy2DToArray, _1, 0, 0, _2, _3, width * sizeof(int), 0, hipMemcpyDeviceToDevice), width, height);
     }
@@ -110,16 +110,16 @@ TEST_CASE("Unit_hipMemcpy2DToArray_Negative_Parameters") {
   const auto allocation_size = 2 * width * height * sizeof(int);
 
   const unsigned int flag = hipArrayDefault;
-  
+
   ArrayAllocGuard2D<int> array_alloc(width, height, flag);
   LinearAllocGuard2D<int> device_alloc(width, height);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, allocation_size);
 
-  SECTION("Host to Array") {  
+  SECTION("Host to Array") {
     SECTION("dst == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DToArray(nullptr, 0, 0, host_alloc.ptr(), 2 *width * sizeof(int), width * sizeof(int), height, hipMemcpyHostToDevice), hipErrorInvalidHandle);
     }
-    SECTION("src == nullptr") { 
+    SECTION("src == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, nullptr, 2 * width * sizeof(int), width * sizeof(int), height, hipMemcpyHostToDevice), hipErrorInvalidValue);
     }
     SECTION("spitch < width") {
@@ -141,7 +141,7 @@ TEST_CASE("Unit_hipMemcpy2DToArray_Negative_Parameters") {
     SECTION("dst == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DToArray(nullptr, 0, 0, device_alloc.ptr(), device_alloc.pitch(), width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidHandle);
     }
-    SECTION("src == nullptr") { 
+    SECTION("src == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, nullptr, device_alloc.pitch(), width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
     }
     SECTION("spitch < width") {

@@ -24,7 +24,7 @@ THE SOFTWARE.
 #include <utils.hh>
 #include <resource_guards.hh>
 
-TEST_CASE("Unit_hipMemcpy2DFromArray_Default") { 
+TEST_CASE("Unit_hipMemcpy2DFromArray_Default") {
   using namespace std::placeholders;
 
   const auto width = GENERATE(16, 32, 48);
@@ -90,7 +90,7 @@ TEST_CASE("Unit_hipMemcpy2DFromArray_ZeroWidthHeight") {
       Memcpy2DFromArrayZeroWidthHeight<false>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, 0, height, hipMemcpyDeviceToHost), width, height);
     }
   }
-  SECTION("Array to device") {  
+  SECTION("Array to device") {
     SECTION("Height is 0") {
       Memcpy2DFromArrayZeroWidthHeight<false>(std::bind(hipMemcpy2DFromArray, _1, _2, _3, 0, 0, width * sizeof(int), 0, hipMemcpyDeviceToDevice), width, height);
     }
@@ -113,11 +113,11 @@ TEST_CASE("Unit_hipMemcpy2DFromArray_Negative_Parameters") {
   LinearAllocGuard2D<int> device_alloc(width, height);
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, allocation_size);
 
-  SECTION("Array to host") {  
+  SECTION("Array to host") {
     SECTION("dst == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DFromArray(nullptr, 2 * width * sizeof(int), array_alloc.ptr(), 0, 0, width * sizeof(int), height, hipMemcpyDeviceToHost), hipErrorInvalidValue);
     }
-    SECTION("src == nullptr") { 
+    SECTION("src == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), 2 * width * sizeof(int), nullptr, 0, 0, width * sizeof(int), height, hipMemcpyDeviceToHost), hipErrorInvalidHandle);
     }
     SECTION("dpitch < width") {
@@ -135,7 +135,7 @@ TEST_CASE("Unit_hipMemcpy2DFromArray_Negative_Parameters") {
       HIP_CHECK_ERROR(hipMemcpy2DFromArray(host_alloc.ptr(), 2 * width * sizeof(int), array_alloc.ptr(), 0, 0, width * sizeof(int), height, static_cast<hipMemcpyKind>(-1)), hipErrorInvalidMemcpyDirection);
     }
   }
-  SECTION("Array to device") {  
+  SECTION("Array to device") { 
     SECTION("dst == nullptr") {
       HIP_CHECK_ERROR(hipMemcpy2DFromArray(nullptr, device_alloc.pitch(), array_alloc.ptr(), 0, 0, width * sizeof(int), height, hipMemcpyDeviceToDevice), hipErrorInvalidValue);
     }
