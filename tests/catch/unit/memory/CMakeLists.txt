@@ -121,6 +121,7 @@ set(TEST_SRC
     hipHostRegister.cc
     hipHostUnregister.cc
     hipMallocPitch.cc
+    hipPointerGetAttributes.cc
     hipHostGetFlags.cc
     hipHostGetDevicePointer.cc
     hipMallocManaged_MultiScenario.cc
