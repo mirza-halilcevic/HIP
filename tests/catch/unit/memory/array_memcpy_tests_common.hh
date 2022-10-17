@@ -125,13 +125,13 @@ void Memcpy2DDeviceFromAShell(F memcpy_func, size_t width, size_t height, const 
   HIP_CHECK(hipMemcpy2DToArray(array_allocation.ptr(), 0, 0, host_allocation.host_ptr(), sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
   std::fill_n(host_allocation.host_ptr(), element_count, 0);
 
-  HIP_CHECK(memcpy_func(device_allocation.ptr(), sizeof(T) * width, array_allocation.ptr()));
+  HIP_CHECK(memcpy_func(device_allocation.ptr(), device_allocation.pitch(), array_allocation.ptr()));
   if (should_synchronize) {
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
 
   HIP_CHECK(hipMemcpy2D(host_allocation.host_ptr(), sizeof(T)*width, device_allocation.ptr(),
-           sizeof(T)*width, sizeof(T)*width, height, hipMemcpyDeviceToHost));
+           device_allocation.pitch(), sizeof(T)*width, height, hipMemcpyDeviceToHost));
 
   if constexpr (enable_peer_access) {
     // If we've gotten this far, EnablePeerAccess must have succeeded, so we only need to check this
@@ -237,10 +237,10 @@ void Memcpy2DDevicetoAShell(F memcpy_func, size_t width, size_t height, const hi
   constexpr int fill_value = 41;
   std::fill_n(host_allocation.host_ptr(), element_count, fill_value);
 
-  HIP_CHECK(hipMemcpy2D(device_allocation.ptr(), sizeof(T)*width, host_allocation.host_ptr(),
+  HIP_CHECK(hipMemcpy2D(device_allocation.ptr(), device_allocation.pitch(), host_allocation.host_ptr(),
            sizeof(T)*width, sizeof(T)*width, height, hipMemcpyHostToDevice));
 
-  HIP_CHECK(memcpy_func(array_allocation.ptr(), device_allocation.ptr(), sizeof(T) * width));
+  HIP_CHECK(memcpy_func(array_allocation.ptr(), device_allocation.ptr(), device_allocation.pitch()));
   if (should_synchronize) {
     HIP_CHECK(hipStreamSynchronize(kernel_stream));
   }
@@ -284,7 +284,7 @@ void MemcpyHtoASyncBehavior(F memcpy_func, size_t width, size_t height,
   const auto host_alloc_type = GENERATE(LA::malloc, LA::hipHostMalloc);
   LinearAllocGuard<int> host_alloc(host_alloc_type, allocation_size);
   ArrayAllocGuard2D<int> array_allocation(width, height, flag);
-  MemcpySyncBehaviorCheck(std::bind(memcpy_func, array_allocation.ptr(), host_alloc.ptr()),
+  MemcpyArraySyncBehaviorCheck(std::bind(memcpy_func, array_allocation.ptr(), host_alloc.ptr()),
                           should_sync, kernel_stream);
 }
 
@@ -297,7 +297,7 @@ void MemcpyAtoHPageableSyncBehavior(F memcpy_func, size_t width, size_t height,
 
   LinearAllocGuard<int> host_alloc(LinearAllocs::malloc, allocation_size);
   ArrayAllocGuard2D<int> array_allocation(width, height, flag);
-  MemcpySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), array_allocation.ptr()),
+  MemcpyArraySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), array_allocation.ptr()),
                           should_sync, kernel_stream);
 }
 
@@ -310,7 +310,7 @@ void MemcpyAtoHPinnedSyncBehavior(F memcpy_func, size_t width, size_t height,
 
   LinearAllocGuard<int> host_alloc(LinearAllocs::hipHostMalloc, allocation_size);
   ArrayAllocGuard2D<int> array_allocation(width, height, flag);
-  MemcpySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), array_allocation.ptr()),
+  MemcpyArraySyncBehaviorCheck(std::bind(memcpy_func, host_alloc.ptr(), array_allocation.ptr()),
                           should_sync, kernel_stream);
 }
 
@@ -323,7 +323,7 @@ void MemcpyDtoASyncBehavior(F memcpy_func, size_t width, size_t height,
   ArrayAllocGuard2D<int> array_allocation(width, height, flag);
   LinearAllocGuard2D<int> device_allocation(width, height);
 
-  MemcpySyncBehaviorCheck(std::bind(memcpy_func, array_allocation.ptr(), device_allocation.ptr()),
+  MemcpyArraySyncBehaviorCheck(std::bind(memcpy_func, array_allocation.ptr(), device_allocation.ptr(), device_allocation.pitch()),
                           should_sync, kernel_stream);
 }
 
@@ -336,6 +336,92 @@ void MemcpyAtoDSyncBehavior(F memcpy_func, size_t width, size_t height,
   LinearAllocGuard2D<int> device_allocation(width, height);
   ArrayAllocGuard2D<int> array_allocation(width, height, flag);
 
-  MemcpySyncBehaviorCheck(std::bind(memcpy_func, device_allocation.ptr(), array_allocation.ptr()),
+  MemcpyArraySyncBehaviorCheck(std::bind(memcpy_func, device_allocation.ptr(), device_allocation.pitch(), array_allocation.ptr()),
                           should_sync, kernel_stream);
+}
+
+template <bool should_synchronize, typename F>
+void Memcpy2DFromArrayZeroWidthHeight(F memcpy_func, size_t width, size_t height, const hipStream_t stream = nullptr) {
+  const unsigned int flag = hipArrayDefault;
+  const auto element_count = width * height;
+
+  SECTION("Device to Host") {
+    ArrayAllocGuard2D<int> array_alloc(width, height, flag);
+    LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, width * height * sizeof(int));
+    int fill_value = 42;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+    HIP_CHECK(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, host_alloc.host_ptr(), sizeof(int)*width, sizeof(int)*width, height, hipMemcpyHostToDevice));
+    fill_value = 41;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+
+    HIP_CHECK(memcpy_func(host_alloc.host_ptr(), sizeof(int) * width, array_alloc.ptr()));
+    if (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    ArrayFindIfNot(host_alloc.host_ptr(), static_cast<uint8_t>(fill_value), element_count);
+  }
+  SECTION("Device to Device") {
+    ArrayAllocGuard2D<int> array_alloc(width, height, flag);
+    LinearAllocGuard2D<uint8_t> device_alloc(width, height);
+    LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, width * height * sizeof(int));
+    int fill_value = 42;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+    HIP_CHECK(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, host_alloc.host_ptr(), sizeof(int)*width, sizeof(int)*width, height, hipMemcpyHostToDevice));
+    fill_value = 41;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+    HIP_CHECK(hipMemcpy2D(device_alloc.ptr(), device_alloc.pitch(), host_alloc.host_ptr(),
+           sizeof(int)*width, sizeof(int)*width, height, hipMemcpyHostToDevice));
+
+    HIP_CHECK(memcpy_func(device_alloc.ptr(), device_alloc.pitch(), array_alloc.ptr()));
+    if constexpr (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    HIP_CHECK(hipMemcpy2D(host_alloc.host_ptr(), sizeof(int)*width, device_alloc.ptr(),
+           device_alloc.pitch(), sizeof(int)*width, height, hipMemcpyDeviceToHost));
+    ArrayFindIfNot(host_alloc.host_ptr(), static_cast<uint8_t>(fill_value), element_count);
+  }
+}
+
+template <bool should_synchronize, typename F>
+void Memcpy2DToArrayZeroWidthHeight(F memcpy_func, size_t width, size_t height, const hipStream_t stream = nullptr) {
+  const unsigned int flag = hipArrayDefault;
+  const auto element_count = width * height;
+
+  SECTION("Host to Device") {
+    ArrayAllocGuard2D<int> array_alloc(width, height, flag);
+    LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, width * height * sizeof(int));
+    int fill_value = 42;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+    HIP_CHECK(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, host_alloc.host_ptr(), sizeof(int)*width, sizeof(int)*width, height, hipMemcpyHostToDevice));
+    fill_value = 41;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+
+    HIP_CHECK(memcpy_func(array_alloc.ptr(), host_alloc.host_ptr(), sizeof(int)*width));
+    if (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    HIP_CHECK(hipMemcpy2DFromArray(host_alloc.host_ptr(), sizeof(int)*width, array_alloc.ptr(),
+           0, 0, sizeof(int)*width, height, hipMemcpyDeviceToHost));
+    ArrayFindIfNot(host_alloc.host_ptr(), static_cast<uint8_t>(42), element_count);
+  }
+  SECTION("Device to Device") {
+    ArrayAllocGuard2D<int> array_alloc(width, height, flag);
+    LinearAllocGuard2D<uint8_t> device_alloc(width, height);
+    LinearAllocGuard<uint8_t> host_alloc(LinearAllocs::hipHostMalloc, width * height * sizeof(int));
+    int fill_value = 42;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+    HIP_CHECK(hipMemcpy2DToArray(array_alloc.ptr(), 0, 0, host_alloc.host_ptr(), sizeof(int)*width, sizeof(int)*width, height, hipMemcpyHostToDevice));
+    fill_value = 41;
+    std::fill_n(host_alloc.host_ptr(), width * height, fill_value);
+    HIP_CHECK(hipMemcpy2D(device_alloc.ptr(), device_alloc.pitch(), host_alloc.host_ptr(),
+           sizeof(int)*width, sizeof(int)*width, height, hipMemcpyHostToDevice));
+
+    HIP_CHECK(memcpy_func(array_alloc.ptr(), device_alloc.ptr(), device_alloc.pitch()));
+    if constexpr (should_synchronize) {
+      HIP_CHECK(hipStreamSynchronize(stream));
+    }
+    HIP_CHECK(hipMemcpy2DFromArray(host_alloc.host_ptr(), sizeof(int)*width, array_alloc.ptr(),
+           0, 0, sizeof(int)*width, height, hipMemcpyDeviceToHost));
+    ArrayFindIfNot(host_alloc.host_ptr(), static_cast<uint8_t>(42), element_count);
+  }
 }
