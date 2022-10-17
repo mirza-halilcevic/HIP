@@ -45,10 +45,10 @@ TEST_CASE("Unit_hipHostGetDevicePointer_Negative") {
   }
 
   SECTION("Non pinned memory as host") {
-    int* hptr = reinterpret_cast<int*>(malloc(sizeof(*hptr)));
-    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dPtr), hptr, 0),
+    int* hPtr = reinterpret_cast<int*>(malloc(sizeof(*hPtr)));
+    HIP_CHECK_ERROR(hipHostGetDevicePointer(reinterpret_cast<void**>(&dPtr), hPtr, 0),
                     hipErrorInvalidValue);
-    free(hptr);
+    free(hPtr);
   }
 
   SECTION("flags non zero") {
