@@ -26,10 +26,12 @@ TEST_CASE("Unit_hipModuleLoad_Positive_Basic") {
   hipModule_t module = nullptr;
   HIP_CHECK(hipModuleLoad(&module, "empty_module.code"));
   REQUIRE(module != nullptr);
+  HIP_CHECK(hipModuleUnload(module));
 }
 
 TEST_CASE("Unit_hipModuleLoad_Negative_Parameters") {
   hipModule_t module;
+
   SECTION("module == nullptr") {
     HIP_CHECK_ERROR(hipModuleLoad(nullptr, "empty_module.code"), hipErrorInvalidValue);
   }
