@@ -5,6 +5,7 @@ set(TEST_SRC
     hipModuleLoadDataEx.cc
     hipModuleUnload.cc
     hipModuleGetFunction.cc
+    hipModuleLaunchKernel.cc
 )
 
 configure_file(not_a_module.txt not_a_module.txt)

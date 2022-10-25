@@ -22,7 +22,9 @@ THE SOFTWARE.
 #include <hip/hip_runtime_api.h>
 
 extern "C" {
-__global__ void global_kernel(int* out) { *out = 42; }
+__global__ void global_kernel() {}
 
 __device__ void device_kernel() {}
+
+__global__ void kernel_42(int* out) { *out = 42; }
 }
