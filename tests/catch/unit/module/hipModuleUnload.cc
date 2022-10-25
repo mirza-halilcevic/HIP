@@ -19,44 +19,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#include "hip_module_common.hh"
-
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 
+TEST_CASE("Unit_hipModuleUnload_Negative_Parameters") {
+  SECTION("module == nullptr") { HIP_CHECK_ERROR(hipModuleUnload(nullptr), hipErrorNotFound); }
 
-TEST_CASE("Unit_hipModuleLoadData_Positive_Basic") {
-  hipModule_t module = nullptr;
-
-  SECTION("Load compiled module from file") {
-    const auto loaded_module = LoadModuleIntoBuffer("empty_module.code");
-    HIP_CHECK(hipModuleLoadData(&module, loaded_module.data()));
-    REQUIRE(module != nullptr);
+  SECTION("Double unload") {
+    hipModule_t module = nullptr;
+    HIP_CHECK(hipModuleLoad(&module, "empty_module.code"));
     HIP_CHECK(hipModuleUnload(module));
-  }
-
-  SECTION("Load RTCd module") {
-    const auto rtc = CreateRTCCharArray(R"(extern "C" __global__ void kernel() {})");
-    HIP_CHECK(hipModuleLoadData(&module, rtc.data()));
-    REQUIRE(module != nullptr);
-    HIP_CHECK(hipModuleUnload(module));
-  }
-}
-
-TEST_CASE("Unit_hipModuleLoadData_Negative_Parameters") {
-  hipModule_t module;
-
-  SECTION("module == nullptr") {
-    const auto loaded_module = LoadModuleIntoBuffer("empty_module.code");
-    HIP_CHECK_ERROR(hipModuleLoadData(nullptr, loaded_module.data()), hipErrorInvalidValue);
-    LoadModuleIntoBuffer("empty_module.code");
-  }
-
-  SECTION("image == nullptr") {
-    HIP_CHECK_ERROR(hipModuleLoadData(&module, nullptr), hipErrorInvalidValue);
-  }
-
-  SECTION("image == empty string") {
-    HIP_CHECK_ERROR(hipModuleLoadData(&module, ""), hipErrorInvalidKernelFile);
+    HIP_CHECK_ERROR(hipModuleUnload(module), hipErrorNotFound);
   }
 }
