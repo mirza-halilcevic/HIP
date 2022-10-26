@@ -27,6 +27,26 @@ THE SOFTWARE.
 #include <hip_test_common.hh>
 #include <hip/hiprtc.h>
 
+ModuleGuard ModuleGuard::LoadModule(const char *fname) {
+  hipModule_t module = nullptr;
+  HIP_CHECK(hipModuleLoad(&module, fname));
+  return ModuleGuard{module};
+}
+
+ModuleGuard ModuleGuard::LoadModuleDataFile(const char *fname) {
+  const auto loaded_module = LoadModuleIntoBuffer(fname);
+  hipModule_t module = nullptr;
+  HIP_CHECK(hipModuleLoadData(&module, loaded_module.data()));
+  return ModuleGuard{module};
+}
+
+ModuleGuard ModuleGuard::LoadModuleDataRTC(const char *code) {
+  const auto rtc = CreateRTCCharArray(code); 
+  hipModule_t module = nullptr;
+  HIP_CHECK(hipModuleLoadData(&module, rtc.data()));
+  return ModuleGuard{module};
+}
+
 // Load module into buffer instead of mapping file to avoid platform specific mechanisms
 std::vector<char> LoadModuleIntoBuffer(const std::experimental::string_view path_string) {
   std::experimental::filesystem::path p(path_string.data());

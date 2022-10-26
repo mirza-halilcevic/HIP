@@ -19,18 +19,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#include "hip_module_common.hh"
+
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 #include <resource_guards.hh>
 #include <utils.hh>
 
 static inline hipModule_t GetModule() {
-  static hipModule_t module = nullptr;
-  if (!module) {
-    HIP_CHECK(hipFree(nullptr));
-    HIP_CHECK(hipModuleLoad(&module, "get_function_module.code"));
-  }
-  return module;
+  HIP_CHECK(hipFree(nullptr));
+  static const auto mg = ModuleGuard::LoadModule("get_function_module.code");
+  return mg.module();
 }
 
 static inline hipFunction_t GetKernel(const char* kname) {
@@ -43,19 +42,16 @@ TEST_CASE("Unit_hipModuleLaunchKernel_Positive_Basic") {
   SECTION("Kernel with no arguments") {
     hipFunction_t f = GetKernel("global_kernel");
     HIP_CHECK(hipModuleLaunchKernel(f, 1, 1, 1, 1, 1, 1, 0, nullptr, nullptr, nullptr));
-    HIP_CHECK(hipGetLastError());
     HIP_CHECK(hipDeviceSynchronize());
   }
 
-  SECTION("Kernel with arguments") {
+  SECTION("Kernel with arguments using kernelParams") {
     hipFunction_t f = GetKernel("kernel_42");
     LinearAllocGuard<int> result_dev(LinearAllocs::hipMalloc, sizeof(int));
     HIP_CHECK(hipMemset(result_dev.ptr(), 0, sizeof(*result_dev.ptr())));
     int* result_ptr = result_dev.ptr();
     void* kernel_args[1] = {&result_ptr};
     HIP_CHECK(hipModuleLaunchKernel(f, 1, 1, 1, 1, 1, 1, 0, nullptr, kernel_args, nullptr));
-    HIP_CHECK(hipGetLastError());
-    HIP_CHECK(hipDeviceSynchronize());
     int result = 0;
     HIP_CHECK(hipMemcpy(&result, result_dev.ptr(), sizeof(result), hipMemcpyDefault));
     REQUIRE(result == 42);
@@ -75,11 +71,34 @@ TEST_CASE("Unit_hipModuleLaunchKernel_Positive_Basic") {
     };
     // clang-format on
     HIP_CHECK(hipModuleLaunchKernel(f, 1, 1, 1, 1, 1, 1, 0, nullptr, nullptr, extra));
-    HIP_CHECK(hipGetLastError());
-    HIP_CHECK(hipDeviceSynchronize());
     int result = 0;
     HIP_CHECK(hipMemcpy(&result, result_dev.ptr(), sizeof(result), hipMemcpyDefault));
     REQUIRE(result == 42);
+  }
+}
+
+TEST_CASE("Unit_hipModuleLaunchKernel_Positive_Parameters") {
+  constexpr auto LaunchNOPKernel = [](unsigned int blockDimX, unsigned int blockDimY,
+                                      unsigned int blockDimZ) {
+    hipFunction_t f = GetKernel("global_kernel");
+    HIP_CHECK(hipModuleLaunchKernel(f, 1, 1, 1, blockDimX, blockDimY, blockDimZ, 0, nullptr,
+                                    nullptr, nullptr));
+    HIP_CHECK(hipDeviceSynchronize());
+  };
+
+  SECTION("blockDimX == maxblockDimX") {
+    const unsigned int x = GetDeviceAttribute(hipDeviceAttributeMaxBlockDimX, 0);
+    LaunchNOPKernel(x, 1, 1);
+  }
+
+  SECTION("blockDimY == maxblockDimY") {
+    const unsigned int y = GetDeviceAttribute(hipDeviceAttributeMaxBlockDimY, 0);
+    LaunchNOPKernel(1, y, 1);
+  }
+
+  SECTION("blockDimZ == maxblockDimZ") {
+    const unsigned int z = GetDeviceAttribute(hipDeviceAttributeMaxBlockDimZ, 0);
+    LaunchNOPKernel(1, 1, z);
   }
 }
 
@@ -147,12 +166,9 @@ TEST_CASE("Unit_hipModuleLaunchKernel_Negative_Parameters") {
   }
 
   SECTION("sharedMemBytes > max shared memory per block") {
-    int max_shared_mem = 0;
-    HIP_CHECK(hipDeviceGetAttribute(&max_shared_mem, hipDeviceAttributeMaxSharedMemoryPerBlock, 0));
-    HIP_CHECK_ERROR(
-        hipModuleLaunchKernel(f, 1, 1, 1, 1, 1, 1, static_cast<unsigned int>(max_shared_mem) + 1,
-                              nullptr, nullptr, nullptr),
-        hipErrorOutOfMemory);
+    const unsigned int max = GetDeviceAttribute(hipDeviceAttributeMaxSharedMemoryPerBlock, 0) + 1u;
+    HIP_CHECK_ERROR(hipModuleLaunchKernel(f, 1, 1, 1, 1, 1, 1, max, nullptr, nullptr, nullptr),
+                    hipErrorOutOfMemory);
   }
 
   SECTION("Invalid stream") {

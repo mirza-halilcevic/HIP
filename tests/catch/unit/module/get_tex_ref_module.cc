@@ -19,34 +19,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#pragma once
+#include <hip/hip_runtime_api.h>
 
-#include <experimental/string_view>
-#include <vector>
-
-#include <hip_test_common.hh>
-
-class ModuleGuard {
- public:
-  ~ModuleGuard() { static_cast<void>(hipModuleUnload(module_)); }
-
-  ModuleGuard(const ModuleGuard&) = delete;
-  ModuleGuard(ModuleGuard&&) = delete;
-
-  static ModuleGuard LoadModule(const char* fname);
-
-  static ModuleGuard LoadModuleDataFile(const char* fname);
-
-  static ModuleGuard LoadModuleDataRTC(const char* code);
-
-  hipModule_t module() const { return module_; }
-
- private:
-  ModuleGuard(const hipModule_t module) : module_{module} {}
-  hipModule_t module_ = nullptr;
-};
-
-// Load module into buffer instead of mapping file to avoid platform specific mechanisms
-std::vector<char> LoadModuleIntoBuffer(const std::experimental::string_view path_string);
-
-std::vector<char> CreateRTCCharArray(const std::experimental::string_view src);
+texture<float, 2> tex;

@@ -26,42 +26,38 @@ THE SOFTWARE.
 
 static hipModule_t GetModule() {
   HIP_CHECK(hipFree(nullptr));
-  static const auto mg = ModuleGuard::LoadModule("get_function_module.code");
+  static const auto mg = ModuleGuard::LoadModule("get_tex_ref_module.code");
   return mg.module();
 }
 
-TEST_CASE("Unit_hipModuleGetFunction_Positive_Basic") {
-  hipFunction_t kernel = nullptr;
-  HIP_CHECK(hipModuleGetFunction(&kernel, GetModule(), "global_kernel"));
-  REQUIRE(kernel != nullptr);
+TEST_CASE("Unit_hipModuleGetTexRef_Positive_Basic") {
+  textureReference* tex_ref_ptr = nullptr;
+  HIP_CHECK(hipModuleGetTexRef(&tex_ref_ptr, GetModule(), "tex"));
+  REQUIRE(tex_ref_ptr != nullptr);
 }
 
-TEST_CASE("Unit_hipModuleGetFunction_Negative_Parameters") {
-  hipFunction_t kernel = nullptr;
+TEST_CASE("Unit_hipModuleGetTexRef_Negative_Parameters") {
+  hipModule_t module = GetModule();
+  textureReference* tex_ref_ptr = nullptr;
 
-  SECTION("function == nullptr") {
-    HIP_CHECK_ERROR(hipModuleGetFunction(nullptr, GetModule(), "global_kernel"),
-                    hipErrorInvalidValue);
+  SECTION("texRef == nullptr") {
+    HIP_CHECK_ERROR(hipModuleGetTexRef(nullptr, module, "tex"), hipErrorInvalidValue);
   }
 
-  SECTION("module == nullptr") {
-    HIP_CHECK_ERROR(hipModuleGetFunction(&kernel, nullptr, "global_kernel"), hipErrorNotFound);
+  SECTION("hmod == nullptr") {
+    HIP_CHECK_ERROR(hipModuleGetTexRef(&tex_ref_ptr, nullptr, "tex"), hipErrorNotFound);
   }
 
-  SECTION("kname == nullptr") {
-    HIP_CHECK_ERROR(hipModuleGetFunction(&kernel, GetModule(), nullptr), hipErrorInvalidValue);
+  SECTION("name == nullptr") {
+    HIP_CHECK_ERROR(hipModuleGetTexRef(&tex_ref_ptr, module, nullptr), hipErrorInvalidValue);
   }
 
-  SECTION("kname == empty string") {
-    HIP_CHECK_ERROR(hipModuleGetFunction(&kernel, GetModule(), ""), hipErrorNotFound);
+  SECTION("name == empty string") {
+    HIP_CHECK_ERROR(hipModuleGetTexRef(&tex_ref_ptr, module, ""), hipErrorNotFound);
   }
 
-  SECTION("kname == non existent kernel") {
-    HIP_CHECK_ERROR(hipModuleGetFunction(&kernel, GetModule(), "non_existent_kernel"),
+  SECTION("name == non existent texture") {
+    HIP_CHECK_ERROR(hipModuleGetTexRef(&tex_ref_ptr, module, "non_existent_texture"),
                     hipErrorNotFound);
-  }
-
-  SECTION("kname == __device__ kernel") {
-    HIP_CHECK_ERROR(hipModuleGetFunction(&kernel, GetModule(), "device_kernel"), hipErrorNotFound);
   }
 }
