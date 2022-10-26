@@ -22,25 +22,16 @@ THE SOFTWARE.
 #include "hip_module_launch_kernel_common.hh"
 
 #include <hip_test_common.hh>
-#include <hip/hip_runtime_api.h>
+#include <hip/hip_ext.h>
 
-static hipError_t hipModuleLaunchKernelWrapper(hipFunction_t f, uint32_t gridX, uint32_t gridY,
-                                               uint32_t gridZ, uint32_t blockX, uint32_t blockY,
-                                               uint32_t blockZ, size_t sharedMemBytes,
-                                               hipStream_t hStream, void** kernelParams,
-                                               void** extra, hipEvent_t, hipEvent_t, uint32_t) {
-  return hipModuleLaunchKernel(f, gridX, gridY, gridZ, blockX, blockY, blockZ, sharedMemBytes,
-                               hStream, kernelParams, extra);
+TEST_CASE("Unit_hipExtModuleLaunchKernel_Positive_Basic") {
+  ModuleLaunchKernelPositiveBasic<hipExtModuleLaunchKernel>();
 }
 
-TEST_CASE("Unit_hipModuleLaunchKernel_Positive_Basic") {
-  ModuleLaunchKernelPositiveBasic<hipModuleLaunchKernelWrapper>();
+TEST_CASE("Unit_hipExtModuleLaunchKernel_Positive_Parameters") {
+  ModuleLaunchKernelPositiveParameters<hipExtModuleLaunchKernel>();
 }
 
-TEST_CASE("Unit_hipModuleLaunchKernel_Positive_Parameters") {
-  ModuleLaunchKernelPositiveParameters<hipModuleLaunchKernelWrapper>();
-}
-
-TEST_CASE("Unit_hipModuleLaunchKernel_Negative_Parameters") {
-  ModuleLaunchKernelNegativeParameters<hipModuleLaunchKernelWrapper>();
+TEST_CASE("Unit_hipExtModuleLaunchKernel_Negative_Parameters") {
+  ModuleLaunchKernelNegativeParameters<hipExtModuleLaunchKernel>();
 }
