@@ -22,32 +22,13 @@ THE SOFTWARE.
 
 #include "execution_control_common.hh"
 
-#include <hip_test_common.hh>
-#include <hip/hip_runtime_api.h>
+#include <hip/hip_cooperative_groups.h>
 
-namespace {
-constexpr std::array<hipFuncCache_t, 4> kCacheConfigs{
-    hipFuncCachePreferNone, hipFuncCachePreferShared, hipFuncCachePreferL1,
-    hipFuncCachePreferEqual};
-} // anonymous namespace
+__global__ void kernel() {}
 
-TEST_CASE("Unit_hipFuncSetCacheConfig_Positive_Basic") {
-  const auto cache_config = GENERATE(from_range(begin(kCacheConfigs), end(kCacheConfigs)));
+__global__ void kernel_42(int* val) { *val = 42; }
 
-  HIP_CHECK(hipFuncSetCacheConfig(reinterpret_cast<void*>(kernel), cache_config));
-
-  kernel<<<1, 1>>>();
-  HIP_CHECK(hipDeviceSynchronize());
-}
-
-TEST_CASE("Unit_hipFuncSetCacheConfig_Negative_Parameters") {
-  SECTION("func == nullptr") {
-    HIP_CHECK_ERROR(hipFuncSetCacheConfig(nullptr, hipFuncCachePreferNone),
-                    hipErrorInvalidDeviceFunction);
-  }
-  SECTION("invalid cache config") {
-    HIP_CHECK_ERROR(hipFuncSetCacheConfig(reinterpret_cast<void*>(kernel),
-                                          static_cast<hipFuncCache_t>(-1)),
-                    hipErrorInvalidValue);
-  }
+__global__ void coop_kernel() {
+  cooperative_groups::grid_group grid = cooperative_groups::this_grid();
+  grid.sync();
 }

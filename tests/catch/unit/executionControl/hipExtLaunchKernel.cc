@@ -20,14 +20,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#include "execution_control_common.hh"
+
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 #include <resource_guards.hh>
 #include <utils.hh>
-
-__global__ void kernel() {}
-
-__global__ void kernel_42(int* val) { *val = 42; }
 
 TEST_CASE("Unit_hipExtLaunchKernel_Positive_Basic") {
   SECTION("Kernel with no arguments") {

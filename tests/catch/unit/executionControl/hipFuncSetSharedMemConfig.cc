@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#include "execution_control_common.hh"
+
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 
@@ -28,17 +30,15 @@ constexpr std::array<hipSharedMemConfig, 3> kSharedMemConfigs{
     hipSharedMemBankSizeDefault, hipSharedMemBankSizeFourByte, hipSharedMemBankSizeEightByte};
 } // anonymous namespace
 
-__global__ void SetSharedMemConfigTestKernel() {}
-
 TEST_CASE("Unit_hipFuncSetSharedMemConfig_Positive_Basic") {
   const auto shared_mem_config =
       GENERATE(from_range(begin(kSharedMemConfigs), end(kSharedMemConfigs)));
 
-  HIP_CHECK(hipFuncSetSharedMemConfig(reinterpret_cast<void*>(SetSharedMemConfigTestKernel),
+  HIP_CHECK(hipFuncSetSharedMemConfig(reinterpret_cast<void*>(kernel),
                                       shared_mem_config));
 
-  SetSharedMemConfigTestKernel<<<1, 1>>>();
-  HIP_CHECK(hipGetLastError());
+  kernel<<<1, 1>>>();
+  HIP_CHECK(hipDeviceSynchronize());
 }
 
 TEST_CASE("Unit_hipFuncSetSharedMemConfig_Negative_Parameters") {
@@ -47,7 +47,7 @@ TEST_CASE("Unit_hipFuncSetSharedMemConfig_Negative_Parameters") {
                     hipErrorInvalidDeviceFunction);
   }
   SECTION("invalid shared mem config") {
-    HIP_CHECK_ERROR(hipFuncSetSharedMemConfig(reinterpret_cast<void*>(SetSharedMemConfigTestKernel),
+    HIP_CHECK_ERROR(hipFuncSetSharedMemConfig(reinterpret_cast<void*>(kernel),
                                               static_cast<hipSharedMemConfig>(-1)),
                     hipErrorInvalidValue);
   }

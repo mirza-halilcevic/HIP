@@ -1,10 +1,17 @@
 set(TEST_SRC
+    execution_control_common.cc
     hipFuncSetCacheConfig.cc
     hipFuncSetSharedMemConfig.cc
     hipFuncSetAttribute.cc
-    hipExtLaunchKernel.cc
+    hipFuncGetAttributes.cc
     hipLaunchCooperativeKernel.cc
+    hipLaunchCooperativeKernelMultiDevice.cc
 )
+
+if(HIP_PLATFORM MATCHES "amd")
+    set(TEST_SRC ${TEST_SRC}
+        hipExtLaunchKernel.cc)
+endif()
 
 hip_add_exe_to_target(NAME ExecutionControlTest
                       TEST_SRC ${TEST_SRC}
