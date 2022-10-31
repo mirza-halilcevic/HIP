@@ -47,10 +47,12 @@ TEST_CASE("Unit_hipFuncSetAttribute_Positive_PreferredSharedMemoryCarveout") {
 
 TEST_CASE("Unit_hipFuncSetAttribute_Positive_Parameters") {
   SECTION("hipFuncAttributeMaxDynamicSharedMemorySize == 0") {
-    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel), hipFuncAttributeMaxDynamicSharedMemorySize, 0));
+    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
+                                  hipFuncAttributeMaxDynamicSharedMemorySize, 0));
   }
 
-  SECTION("hipFuncAttributeMaxDynamicSharedMemorySize == maxSharedMemoryPerBlock - sharedSizeBytes") {
+  SECTION(
+      "hipFuncAttributeMaxDynamicSharedMemorySize == maxSharedMemoryPerBlock - sharedSizeBytes") {
     // The sum of this value and the function attribute sharedSizeBytes cannot exceed the device
     // attribute cudaDevAttrMaxSharedMemoryPerBlockOptin
     int max_shared;
@@ -59,19 +61,24 @@ TEST_CASE("Unit_hipFuncSetAttribute_Positive_Parameters") {
     hipFuncAttributes attributes;
     HIP_CHECK(hipFuncGetAttributes(&attributes, reinterpret_cast<void*>(kernel)));
 
-    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel), hipFuncAttributeMaxDynamicSharedMemorySize, max_shared - attributes.sharedSizeBytes));
+    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
+                                  hipFuncAttributeMaxDynamicSharedMemorySize,
+                                  max_shared - attributes.sharedSizeBytes));
   }
 
   SECTION("hipFuncAttributePreferredSharedMemoryCarveout == 0") {
-    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel), hipFuncAttributePreferredSharedMemoryCarveout, 0));
+    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
+                                  hipFuncAttributePreferredSharedMemoryCarveout, 0));
   }
 
   SECTION("hipFuncAttributePreferredSharedMemoryCarveout == 100") {
-    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel), hipFuncAttributePreferredSharedMemoryCarveout, 100));
+    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
+                                  hipFuncAttributePreferredSharedMemoryCarveout, 100));
   }
 
   SECTION("hipFuncAttributePreferredSharedMemoryCarveout == -1 (default)") {
-    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel), hipFuncAttributePreferredSharedMemoryCarveout, -1));
+    HIP_CHECK(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
+                                  hipFuncAttributePreferredSharedMemoryCarveout, -1));
   }
 }
 
@@ -82,19 +89,19 @@ TEST_CASE("Unit_hipFuncSetAttribute_Negative_Parameters") {
   }
 
   SECTION("invalid attribute") {
-    HIP_CHECK_ERROR(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
-                                        static_cast<hipFuncAttribute>(-1), 50),
-                    hipErrorInvalidValue);
+    HIP_CHECK_ERROR(
+        hipFuncSetAttribute(reinterpret_cast<void*>(kernel), static_cast<hipFuncAttribute>(-1), 50),
+        hipErrorInvalidValue);
   }
 
   SECTION("hipFuncAttributeMaxDynamicSharedMemorySize < 0") {
     HIP_CHECK_ERROR(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
-                                        hipFuncAttributeMaxDynamicSharedMemorySize,
-                                        -1),
+                                        hipFuncAttributeMaxDynamicSharedMemorySize, -1),
                     hipErrorInvalidValue);
   }
 
-  SECTION("hipFuncAttributeMaxDynamicSharedMemorySize > maxSharedMemoryPerBlock - sharedSizeBytes") {
+  SECTION(
+      "hipFuncAttributeMaxDynamicSharedMemorySize > maxSharedMemoryPerBlock - sharedSizeBytes") {
     // The sum of this value and the function attribute sharedSizeBytes cannot exceed the device
     // attribute cudaDevAttrMaxSharedMemoryPerBlockOptin
     int max_shared;
@@ -114,7 +121,7 @@ TEST_CASE("Unit_hipFuncSetAttribute_Negative_Parameters") {
                                         hipFuncAttributePreferredSharedMemoryCarveout, -2),
                     hipErrorInvalidValue);
   }
-  
+
   SECTION("hipFuncAttributePreferredSharedMemoryCarveout > 100") {
     HIP_CHECK_ERROR(hipFuncSetAttribute(reinterpret_cast<void*>(kernel),
                                         hipFuncAttributePreferredSharedMemoryCarveout, 101),

@@ -29,7 +29,7 @@ namespace {
 constexpr std::array<hipFuncCache_t, 4> kCacheConfigs{
     hipFuncCachePreferNone, hipFuncCachePreferShared, hipFuncCachePreferL1,
     hipFuncCachePreferEqual};
-} // anonymous namespace
+}  // anonymous namespace
 
 TEST_CASE("Unit_hipFuncSetCacheConfig_Positive_Basic") {
   const auto cache_config = GENERATE(from_range(begin(kCacheConfigs), end(kCacheConfigs)));
@@ -46,8 +46,8 @@ TEST_CASE("Unit_hipFuncSetCacheConfig_Negative_Parameters") {
                     hipErrorInvalidDeviceFunction);
   }
   SECTION("invalid cache config") {
-    HIP_CHECK_ERROR(hipFuncSetCacheConfig(reinterpret_cast<void*>(kernel),
-                                          static_cast<hipFuncCache_t>(-1)),
-                    hipErrorInvalidValue);
+    HIP_CHECK_ERROR(
+        hipFuncSetCacheConfig(reinterpret_cast<void*>(kernel), static_cast<hipFuncCache_t>(-1)),
+        hipErrorInvalidValue);
   }
 }

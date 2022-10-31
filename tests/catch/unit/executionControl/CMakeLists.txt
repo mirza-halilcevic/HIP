@@ -10,7 +10,9 @@ set(TEST_SRC
 
 if(HIP_PLATFORM MATCHES "amd")
     set(TEST_SRC ${TEST_SRC}
-        hipExtLaunchKernel.cc)
+        hipExtLaunchKernel.cc
+        hipExtLaunchMultiKernelMultiDevice.cc
+    )
 endif()
 
 hip_add_exe_to_target(NAME ExecutionControlTest

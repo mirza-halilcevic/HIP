@@ -35,19 +35,19 @@ TEST_CASE("Unit_hipLaunchCooperativeKernel_Positive_Basic") {
 
   SECTION("Cooperative kernel with no arguments") {
     HIP_CHECK(hipLaunchCooperativeKernel(reinterpret_cast<void*>(coop_kernel), dim3{2, 2, 1},
-                                       dim3{1, 1, 1}, nullptr, 0, nullptr));
+                                         dim3{1, 1, 1}, nullptr, 0, nullptr));
     HIP_CHECK(hipDeviceSynchronize());
   }
 
   SECTION("Kernel with arguments using kernelParams") {
     LinearAllocGuard<int> result_dev(LinearAllocs::hipMalloc, sizeof(int));
     HIP_CHECK(hipMemset(result_dev.ptr(), 0, sizeof(*result_dev.ptr())));
-    
+
     int* result_ptr = result_dev.ptr();
     void* kernel_args[1] = {&result_ptr};
-    HIP_CHECK(hipLaunchCooperativeKernel(reinterpret_cast<void*>(kernel_42), dim3{1, 1, 1}, dim3{1, 1, 1},
-                                 kernel_args, 0, nullptr));
-    
+    HIP_CHECK(hipLaunchCooperativeKernel(reinterpret_cast<void*>(kernel_42), dim3{1, 1, 1},
+                                         dim3{1, 1, 1}, kernel_args, 0, nullptr));
+
     int result = 0;
     HIP_CHECK(hipMemcpy(&result, result_dev.ptr(), sizeof(result), hipMemcpyDefault));
     REQUIRE(result == 42);

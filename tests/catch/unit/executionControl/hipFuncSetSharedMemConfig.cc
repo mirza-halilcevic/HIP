@@ -28,14 +28,13 @@ THE SOFTWARE.
 namespace {
 constexpr std::array<hipSharedMemConfig, 3> kSharedMemConfigs{
     hipSharedMemBankSizeDefault, hipSharedMemBankSizeFourByte, hipSharedMemBankSizeEightByte};
-} // anonymous namespace
+}  // anonymous namespace
 
 TEST_CASE("Unit_hipFuncSetSharedMemConfig_Positive_Basic") {
   const auto shared_mem_config =
       GENERATE(from_range(begin(kSharedMemConfigs), end(kSharedMemConfigs)));
 
-  HIP_CHECK(hipFuncSetSharedMemConfig(reinterpret_cast<void*>(kernel),
-                                      shared_mem_config));
+  HIP_CHECK(hipFuncSetSharedMemConfig(reinterpret_cast<void*>(kernel), shared_mem_config));
 
   kernel<<<1, 1>>>();
   HIP_CHECK(hipDeviceSynchronize());
