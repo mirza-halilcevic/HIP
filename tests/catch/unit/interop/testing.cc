@@ -330,10 +330,11 @@ class VulkanTestBase {
     vkGetPhysicalDeviceMemoryProperties(_physical_device, &memory_properties);
     for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
       if ((memory_type_bits & (1 << i)) &&
-          ((memory_properties.memoryTypes[i].propertyFlags & properties) == properties))
+          ((memory_properties.memoryTypes[i].propertyFlags & properties) == properties)) {
         return i;
+      }
     }
-    return static_cast<uint32_t>(-1);
+    return VK_MAX_MEMORY_TYPES;
   }
 
   void CreateInBuffer() {
@@ -345,15 +346,16 @@ class VulkanTestBase {
     buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &_in_buffer));
 
-    VkMemoryRequirements memory_requiremenets;
-    vkGetBufferMemoryRequirements(_device, _in_buffer, &memory_requiremenets);
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(_device, _in_buffer, &memory_requirements);
 
     VkMemoryAllocateInfo allocate_info = {};
     allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocate_info.allocationSize = memory_requiremenets.size;
+    allocate_info.allocationSize = memory_requirements.size;
     allocate_info.memoryTypeIndex =
-        FindMemoryType(memory_requiremenets.memoryTypeBits,
+        FindMemoryType(memory_requirements.memoryTypeBits,
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    REQUIRE(allocate_info.memoryTypeIndex != VK_MAX_MEMORY_TYPES);
 
     VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &_in_buffer_memory));
     VK_CHECK_RESULT(vkBindBufferMemory(_device, _in_buffer, _in_buffer_memory, 0));
@@ -443,7 +445,7 @@ class VulkanTestBase {
 
     VK_CHECK_RESULT(vkQueueSubmit(_queue, 1, &submit_info, fence));
     VK_CHECK_RESULT(vkWaitForFences(_device, 1, &fence, VK_TRUE, 10'000'000'000));
-    std::cout << cudaGetErrorName(cudaStreamQuery(nullptr)) << std::endl;
+    std::cout << cudaGetErrorName(cudaStreamSynchronize(nullptr)) << std::endl;
     std::cout << "Blahem" << std::endl;
 
     int* out_data;
