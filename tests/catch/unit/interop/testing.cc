@@ -42,22 +42,6 @@ THE SOFTWARE.
     REQUIRE(VK_SUCCESS == res);                                                                    \
   }
 
-inline static cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(
-    const VkExternalSemaphoreHandleTypeFlagBits handle_type, bool is_timeline_semaphore) {
-  if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
-    return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
-                                 : cudaExternalSemaphoreHandleTypeOpaqueWin32;
-  } else if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
-    return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
-                                 : cudaExternalSemaphoreHandleTypeOpaqueWin32Kmt;
-  } else if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
-    return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreFd
-                                 : cudaExternalSemaphoreHandleTypeOpaqueFd;
-  }
-
-  throw std::invalid_argument("Invalid vulkan semaphore handle type");
-}
-
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
@@ -290,7 +274,7 @@ class VulkanTestBase {
   }
 
   VkSemaphore CreateExternalSemaphore(VkExternalSemaphoreHandleTypeFlagBits handle_type,
-                                      bool is_timeline_semaphore) {
+                                      bool is_timeline_semaphore, uint64_t initial_value = 0) {
     VkExportSemaphoreCreateInfoKHR export_sem_create_info = {};
     export_sem_create_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
     export_sem_create_info.handleTypes = handle_type;
@@ -299,7 +283,7 @@ class VulkanTestBase {
       VkSemaphoreTypeCreateInfo timeline_create_info = {};
       timeline_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
       timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-      timeline_create_info.initialValue = 0;
+      timeline_create_info.initialValue = initial_value;
       export_sem_create_info.pNext = &timeline_create_info;
     } else {
       export_sem_create_info.pNext = nullptr;
@@ -314,6 +298,23 @@ class VulkanTestBase {
 
     return semaphore;
   }
+
+  inline cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(
+      const VkExternalSemaphoreHandleTypeFlagBits handle_type, bool is_timeline_semaphore) {
+    if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
+      return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
+                                   : cudaExternalSemaphoreHandleTypeOpaqueWin32;
+    } else if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
+      return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
+                                   : cudaExternalSemaphoreHandleTypeOpaqueWin32Kmt;
+    } else if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
+      return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreFd
+                                   : cudaExternalSemaphoreHandleTypeOpaqueFd;
+    }
+
+    throw std::invalid_argument("Invalid vulkan semaphore handle type");
+  }
+
 
 #ifdef _WIN64
   HANDLE
@@ -368,8 +369,7 @@ class VulkanTestBase {
       VkSemaphore vk_sem, VkExternalSemaphoreHandleTypeFlagBits handle_type,
       bool is_timeline_semaphore) {
     cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
-    sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(
-        handle_type, is_timeline_semaphore /*Needs to be passed as argument*/);
+    sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(handle_type, is_timeline_semaphore);
 #ifdef _WIN64
     sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem, handle_type);
 #else
@@ -378,6 +378,16 @@ class VulkanTestBase {
     sem_handle_desc.flags = 0;
 
     return sem_handle_desc;
+  }
+
+  VkFence CreateFence() {
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info = {};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence_create_info.flags = 0;
+    VK_CHECK_RESULT(vkCreateFence(_device, &fence_create_info, nullptr, &fence));
+
+    return fence;
   }
 
   bool _enable_validation = false;
@@ -400,10 +410,15 @@ class VulkanTestBase {
 
 class VulkanSemaphoreTests : private VulkanTestBase {
  public:
-  VulkanSemaphoreTests(bool enable_validation) : VulkanTestBase(enable_validation) {
+  VulkanSemaphoreTests(bool timeline_semaphore, bool enable_validation)
+      : VulkanTestBase(enable_validation), _timeline_semaphore{timeline_semaphore} {
     constexpr auto size = sizeof(int);
     _in = CreateStorage(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     _out = CreateStorage(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+    _semaphore = CreateExternalSemaphore(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
+                                         _timeline_semaphore);
+    _fence = CreateFence();
 
     VK_CHECK_RESULT(
         vkMapMemory(_device, _in.memory, 0, sizeof(int), 0, reinterpret_cast<void**>(&_in_host)));
@@ -412,6 +427,9 @@ class VulkanSemaphoreTests : private VulkanTestBase {
   }
 
   ~VulkanSemaphoreTests() {
+    if (_semaphore != nullptr) vkDestroySemaphore(_device, _semaphore, nullptr);
+    if (_fence != nullptr) vkDestroyFence(_device, _fence, nullptr);
+
     if (_in_host != nullptr) vkUnmapMemory(_device, _in.memory);
     if (_out_host != nullptr) vkUnmapMemory(_device, _out.memory);
 
@@ -424,8 +442,6 @@ class VulkanSemaphoreTests : private VulkanTestBase {
 
   void run() {
     VkBufferCopy buffer_copy = {};
-    buffer_copy.srcOffset = 0;
-    buffer_copy.dstOffset = 0;
     buffer_copy.size = sizeof(int);
 
     VkCommandBufferBeginInfo begin_info = {};
@@ -435,48 +451,40 @@ class VulkanSemaphoreTests : private VulkanTestBase {
     vkCmdCopyBuffer(_command_buffer, _in.buffer, _out.buffer, 1, &buffer_copy);
     VK_CHECK_RESULT(vkEndCommandBuffer(_command_buffer));
 
-    VkFence fence;
-    VkFenceCreateInfo fence_create_info = {};
-    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create_info.flags = 0;
-    VK_CHECK_RESULT(vkCreateFence(_device, &fence_create_info, nullptr, &fence));
-
-
-    const auto semaphore =
-        CreateExternalSemaphore(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, false);
-
-    const auto cuda_sem_handle_desc =
-        BuildSemaphoreDescriptor(semaphore, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, false);
+    const auto cuda_sem_handle_desc = BuildSemaphoreDescriptor(
+        _semaphore, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, _timeline_semaphore);
 
     cudaExternalSemaphore_t cuda_ext_semaphore;
     E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
 
     cudaExternalSemaphoreWaitParams cuda_ext_semaphore_wait_params = {};
     cuda_ext_semaphore_wait_params.flags = 0;
-    cuda_ext_semaphore_wait_params.params.fence.value = 0;
+    cuda_ext_semaphore_wait_params.params.fence.value = _timeline_semaphore ? 1 : 0;
     E(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &cuda_ext_semaphore_wait_params, 1,
                                       nullptr));
-    std::cout << cudaGetErrorName(cudaStreamQuery(nullptr)) << std::endl;
+    REQUIRE(cudaStreamQuery(nullptr) == cudaErrorNotReady); 
 
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &_command_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &semaphore;
+    submit_info.pSignalSemaphores = &_semaphore;
 
     *_in_host = 42;
 
-    VK_CHECK_RESULT(vkQueueSubmit(_queue, 1, &submit_info, fence));
-    VK_CHECK_RESULT(vkWaitForFences(_device, 1, &fence, VK_TRUE, 10'000'000'000));
-    std::cout << cudaGetErrorName(cudaStreamSynchronize(nullptr)) << std::endl;
+    VK_CHECK_RESULT(vkQueueSubmit(_queue, 1, &submit_info, _fence));
+    VK_CHECK_RESULT(vkWaitForFences(_device, 1, &_fence, VK_TRUE, 10'000'000'000));
+    // TODO change to StreamQuery polling loop 
+    E(cudaStreamSynchronize(nullptr));
 
-    std::cout << *_out_host << std::endl;
-    vkUnmapMemory(_device, _out.memory);
-    vkUnmapMemory(_device, _in.memory);
+    REQUIRE(42 == *_out_host);
   }
 
  private:
+  bool _timeline_semaphore = false;
+  VkSemaphore _semaphore = VK_NULL_HANDLE;
+  VkFence _fence = VK_NULL_HANDLE;
   Storage _in;
   Storage _out;
   int* _in_host = nullptr;
@@ -484,6 +492,6 @@ class VulkanSemaphoreTests : private VulkanTestBase {
 };
 
 TEST_CASE("Blahem") {
-  VulkanSemaphoreTests test(true);
+  VulkanSemaphoreTests test(false, true);
   test.run();
 }
