@@ -58,94 +58,6 @@ inline static cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(
   throw std::invalid_argument("Invalid vulkan semaphore handle type");
 }
 
-#ifdef _WIN64
-HANDLE
-GetSemaphoreHandle(VkSemaphore semaphore, const VkExternalSemaphoreHandleTypeFlagBits handle_type,
-                   VkDevice device) {
-  HANDLE handle = 0;
-
-  VkSemaphoreGetWin32HandleInfoKHR semaphoreGetWin32HandleInfoKHR = {};
-  semaphoreGetWin32HandleInfoKHR.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
-  semaphoreGetWin32HandleInfoKHR.pNext = NULL;
-  semaphoreGetWin32HandleInfoKHR.semaphore = semaphore;
-  semaphoreGetWin32HandleInfoKHR.handleType = handle_type;
-
-  PFN_vkGetSemaphoreWin32HandleKHR fpGetSemaphoreWin32HandleKHR;
-  fpGetSemaphoreWin32HandleKHR =
-      (PFN_vkGetSemaphoreWin32HandleKHR)vkGetDeviceProcAddr(device, "vkGetSemaphoreWin32HandleKHR");
-  if (!fpGetSemaphoreWin32HandleKHR) {
-    throw std::runtime_error("Failed to retrieve vkGetSemaphoreWin32HandleKHR");
-  }
-  if (fpGetSemaphoreWin32HandleKHR(device, &semaphoreGetWin32HandleInfoKHR, &handle) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to retrieve handle for buffer!");
-  }
-  return handle;
-}
-#else
-int GetSemaphoreHandle(VkSemaphore semaphore,
-                       const VkExternalSemaphoreHandleTypeFlagBits handle_type, VkDevice device) {
-  int fd;
-
-  VkSemaphoreGetFdInfoKHR semaphoreGetFdInfoKHR = {};
-  semaphoreGetFdInfoKHR.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
-  semaphoreGetFdInfoKHR.pNext = NULL;
-  semaphoreGetFdInfoKHR.semaphore = semaphore;
-  semaphoreGetFdInfoKHR.handleType = handle_type;
-
-  PFN_vkGetSemaphoreFdKHR fpGetSemaphoreFdKHR;
-  fpGetSemaphoreFdKHR = (PFN_vkGetSemaphoreFdKHR)vkGetDeviceProcAddr(device, "vkGetSemaphoreFdKHR");
-  if (!fpGetSemaphoreFdKHR) {
-    throw std::runtime_error("Failed to retrieve vkGetSemaphoreFdKHR");
-  }
-  if (fpGetSemaphoreFdKHR(device, &semaphoreGetFdInfoKHR, &fd) != VK_SUCCESS) {
-    throw std::runtime_error("Failed to retrieve semaphore handle");
-  }
-
-  return fd;
-}
-#endif
-
-VkSemaphore CreateTimelineSemaphore(VkExternalSemaphoreHandleTypeFlagBits handle_type,
-                                    VkDevice device) {
-  VkSemaphoreTypeCreateInfo timeline_create_info;
-  timeline_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-  timeline_create_info.pNext = nullptr;
-  timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-  timeline_create_info.initialValue = 0;
-
-  VkExportSemaphoreCreateInfoKHR export_sem_create_info = {};
-  export_sem_create_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
-  export_sem_create_info.pNext = &timeline_create_info;
-  export_sem_create_info.handleTypes = handle_type;
-
-  VkSemaphoreCreateInfo sem_info = {};
-  sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-  sem_info.pNext = &export_sem_create_info;
-
-  VkSemaphore semaphore;
-  if (vkCreateSemaphore(device, &sem_info, nullptr, &semaphore) != VK_SUCCESS) {
-    throw std::runtime_error("Failed to create timeline semaphore");
-  }
-  return semaphore;
-}
-
-cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(
-    cudaExternalSemaphore_t& cuda_sem, VkSemaphore& vk_sem,
-    VkExternalSemaphoreHandleTypeFlagBits handle_type, VkDevice device) {
-  cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
-  sem_handle_desc.type =
-      VulkanHandleTypeToCudaHandleType(handle_type, true /*Needs to be passed as argument*/);
-#ifdef _WIN64
-  sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem, handle_type, device);
-#else
-  sem_handle_desc.handle.fd = GetSemaphoreHandle(vk_sem, handle_type, device);
-#endif
-  sem_handle_desc.flags = 0;
-
-  return sem_handle_desc;
-}
-
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
@@ -377,6 +289,97 @@ class VulkanTestBase {
     return storage;
   }
 
+  VkSemaphore CreateExternalSemaphore(VkExternalSemaphoreHandleTypeFlagBits handle_type,
+                                      bool is_timeline_semaphore) {
+    VkExportSemaphoreCreateInfoKHR export_sem_create_info = {};
+    export_sem_create_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
+    export_sem_create_info.handleTypes = handle_type;
+
+    if (is_timeline_semaphore) {
+      VkSemaphoreTypeCreateInfo timeline_create_info = {};
+      timeline_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+      timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+      timeline_create_info.initialValue = 0;
+      export_sem_create_info.pNext = &timeline_create_info;
+    } else {
+      export_sem_create_info.pNext = nullptr;
+    }
+
+    VkSemaphoreCreateInfo semaphore_create_info;
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    semaphore_create_info.pNext = &export_sem_create_info;
+
+    VkSemaphore semaphore;
+    VK_CHECK_RESULT(vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &semaphore));
+
+    return semaphore;
+  }
+
+#ifdef _WIN64
+  HANDLE
+  GetSemaphoreHandle(VkSemaphore semaphore,
+                     const VkExternalSemaphoreHandleTypeFlagBits handle_type) {
+    HANDLE handle = 0;
+
+    VkSemaphoreGetWin32HandleInfoKHR semaphoreGetWin32HandleInfoKHR = {};
+    semaphoreGetWin32HandleInfoKHR.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
+    semaphoreGetWin32HandleInfoKHR.pNext = NULL;
+    semaphoreGetWin32HandleInfoKHR.semaphore = semaphore;
+    semaphoreGetWin32HandleInfoKHR.handleType = handle_type;
+
+    PFN_vkGetSemaphoreWin32HandleKHR fpGetSemaphoreWin32HandleKHR;
+    fpGetSemaphoreWin32HandleKHR = (PFN_vkGetSemaphoreWin32HandleKHR)vkGetDeviceProcAddr(
+        _device, "vkGetSemaphoreWin32HandleKHR");
+    if (!fpGetSemaphoreWin32HandleKHR) {
+      throw std::runtime_error("Failed to retrieve vkGetSemaphoreWin32HandleKHR");
+    }
+    if (fpGetSemaphoreWin32HandleKHR(_device, &semaphoreGetWin32HandleInfoKHR, &handle) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("Failed to retrieve handle for buffer!");
+    }
+    return handle;
+  }
+#else
+  int GetSemaphoreHandle(VkSemaphore semaphore,
+                         const VkExternalSemaphoreHandleTypeFlagBits handle_type) {
+    int fd;
+
+    VkSemaphoreGetFdInfoKHR semaphoreGetFdInfoKHR = {};
+    semaphoreGetFdInfoKHR.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+    semaphoreGetFdInfoKHR.pNext = NULL;
+    semaphoreGetFdInfoKHR.semaphore = semaphore;
+    semaphoreGetFdInfoKHR.handleType = handle_type;
+
+    PFN_vkGetSemaphoreFdKHR fpGetSemaphoreFdKHR;
+    fpGetSemaphoreFdKHR =
+        (PFN_vkGetSemaphoreFdKHR)vkGetDeviceProcAddr(_device, "vkGetSemaphoreFdKHR");
+    if (!fpGetSemaphoreFdKHR) {
+      throw std::runtime_error("Failed to retrieve vkGetSemaphoreFdKHR");
+    }
+    if (fpGetSemaphoreFdKHR(_device, &semaphoreGetFdInfoKHR, &fd) != VK_SUCCESS) {
+      throw std::runtime_error("Failed to retrieve semaphore handle");
+    }
+
+    return fd;
+  }
+#endif
+
+  cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(
+      VkSemaphore vk_sem, VkExternalSemaphoreHandleTypeFlagBits handle_type,
+      bool is_timeline_semaphore) {
+    cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
+    sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(
+        handle_type, is_timeline_semaphore /*Needs to be passed as argument*/);
+#ifdef _WIN64
+    sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem, handle_type);
+#else
+    sem_handle_desc.handle.fd = GetSemaphoreHandle(vk_sem, handle_type);
+#endif
+    sem_handle_desc.flags = 0;
+
+    return sem_handle_desc;
+  }
+
   bool _enable_validation = false;
   VkInstance _instance = VK_NULL_HANDLE;
   VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
@@ -438,26 +441,16 @@ class VulkanSemaphoreTests : private VulkanTestBase {
     fence_create_info.flags = 0;
     VK_CHECK_RESULT(vkCreateFence(_device, &fence_create_info, nullptr, &fence));
 
-    VkExportSemaphoreCreateInfoKHR export_semaphore_info = {};
-    export_semaphore_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
-    export_semaphore_info.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
 
-    VkSemaphoreCreateInfo semaphore_create_info = {};
-    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphore_create_info.pNext = &export_semaphore_info;
+    const auto semaphore =
+        CreateExternalSemaphore(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, false);
 
-    VkSemaphore semaphore;
-    VK_CHECK_RESULT(vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &semaphore));
+    const auto cuda_sem_handle_desc =
+        BuildSemaphoreDescriptor(semaphore, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, false);
 
-    int semaphore_handle =
-        GetSemaphoreHandle(semaphore, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, _device);
-    cudaExternalSemaphoreHandleDesc cuda_sem_handle_desc = {};
-    cuda_sem_handle_desc.type =
-        VulkanHandleTypeToCudaHandleType(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, false);
-    cuda_sem_handle_desc.handle.fd = semaphore_handle;
-    cuda_sem_handle_desc.flags = 0;
     cudaExternalSemaphore_t cuda_ext_semaphore;
     E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
+
     cudaExternalSemaphoreWaitParams cuda_ext_semaphore_wait_params = {};
     cuda_ext_semaphore_wait_params.flags = 0;
     cuda_ext_semaphore_wait_params.params.fence.value = 0;
@@ -490,7 +483,7 @@ class VulkanSemaphoreTests : private VulkanTestBase {
   int* _out_host = nullptr;
 };
 
-TEST_CASE("Blahem") { 
+TEST_CASE("Blahem") {
   VulkanSemaphoreTests test(true);
-  test.run(); 
+  test.run();
 }
