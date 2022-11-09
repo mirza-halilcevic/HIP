@@ -31,18 +31,14 @@ THE SOFTWARE.
 #define E(expr)                                                                                    \
   {                                                                                                \
     cudaError_t err = (expr);                                                                      \
-    if (err != cudaSuccess) {                                                                      \
-      UNSCOPED_INFO("Cuda error: " << cudaGetErrorString(err));                                    \
-    }                                                                                              \
+    UNSCOPED_INFO("Cuda error: " << cudaGetErrorString(err));                                      \
     REQUIRE(cudaSuccess == err);                                                                   \
   }
 
 #define VK_CHECK_RESULT(code)                                                                      \
   {                                                                                                \
     VkResult res = (code);                                                                         \
-    if (res != VK_SUCCESS) {                                                                       \
-      UNSCOPED_INFO("Vulkan error" << std::to_string(res));                                        \
-    }                                                                                              \
+    UNSCOPED_INFO("Vulkan error" << std::to_string(res));                                          \
     REQUIRE(VK_SUCCESS == res);                                                                    \
   }
 
@@ -166,12 +162,19 @@ class VulkanTestBase {
     }
 
     CreateInstance();
-    FindPhysicalDevice();
     CreateDevice();
     CreateCommandBuffer();
-    CreateInBuffer();
-    CreateOutBuffer();
-    Blahem();
+  }
+
+  ~VulkanTestBase() {
+    if (_command_buffer != VK_NULL_HANDLE)
+      vkFreeCommandBuffers(_device, _command_pool, 1, &_command_buffer);
+
+    if (_command_pool != VK_NULL_HANDLE) vkDestroyCommandPool(_device, _command_pool, nullptr);
+
+    if (_device != VK_NULL_HANDLE) vkDestroyDevice(_device, nullptr);
+
+    if (_instance != VK_NULL_HANDLE) vkDestroyInstance(_instance, nullptr);
   }
 
  private:
@@ -210,8 +213,8 @@ class VulkanTestBase {
     if (found_val_layer) {
       _enabled_layers.push_back("VK_LAYER_KHRONOS_validation");
     } else {
-        UNSCOPED_INFO("Validation was requested, but the validation layer could not be located");
-        REQUIRE(found_val_layer);
+      UNSCOPED_INFO("Validation was requested, but the validation layer could not be located");
+      REQUIRE(found_val_layer);
     }
   }
 
@@ -228,6 +231,23 @@ class VulkanTestBase {
     debug_create_info.pfnUserCallback = DebugCallback;
 
     return debug_create_info;
+  }
+
+  uint32_t GetComputeQueueFamilyIndex() {
+    uint32_t queue_family_count = 0u;
+
+    vkGetPhysicalDeviceQueueFamilyProperties(_physical_device, &queue_family_count, nullptr);
+    std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+    vkGetPhysicalDeviceQueueFamilyProperties(_physical_device, &queue_family_count,
+                                             queue_families.data());
+
+    const auto it =
+        std::find_if(queue_families.cbegin(), queue_families.cend(), [](const auto& props) {
+          return props.queueCount > 0 && (props.queueFlags & VK_QUEUE_COMPUTE_BIT);
+        });
+    REQUIRE(it != queue_families.cend());
+
+    return std::distance(queue_families.cbegin(), it);
   }
 
   void CreateInstance() {
@@ -267,26 +287,11 @@ class VulkanTestBase {
     _physical_device = physical_devices[0];
   }
 
-  uint32_t GetComputeQueueFamilyIndex() {
-    uint32_t queue_family_count = 0u;
-
-    vkGetPhysicalDeviceQueueFamilyProperties(_physical_device, &queue_family_count, nullptr);
-    std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-    vkGetPhysicalDeviceQueueFamilyProperties(_physical_device, &queue_family_count,
-                                             queue_families.data());
-
-    const auto it =
-        std::find_if(queue_families.cbegin(), queue_families.cend(), [](const auto& props) {
-          return props.queueCount > 0 && (props.queueFlags & VK_QUEUE_COMPUTE_BIT);
-        });
-    REQUIRE(it != queue_families.cend());
-
-    return std::distance(queue_families.cbegin(), it);
-  }
-
   void CreateDevice() {
     UNSCOPED_INFO("Not all of the required device extensions are supported");
     REQUIRE(CheckExtensionSupport(_required_device_extensions));
+
+    FindPhysicalDevice();
 
     VkDeviceQueueCreateInfo queue_create_info = {};
     queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -325,6 +330,7 @@ class VulkanTestBase {
         vkAllocateCommandBuffers(_device, &command_buffer_allocate_info, &_command_buffer));
   }
 
+ protected:
   uint32_t FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(_physical_device, &memory_properties);
@@ -337,17 +343,25 @@ class VulkanTestBase {
     return VK_MAX_MEMORY_TYPES;
   }
 
-  void CreateInBuffer() {
+  struct Storage {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    uint32_t size = 0u;
+  };
+
+  Storage CreateStorage(uint32_t size, VkBufferUsageFlagBits transfer_flags) {
+    Storage storage;
+    storage.size = size;
+
     VkBufferCreateInfo buffer_create_info = {};
     buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_create_info.size = sizeof(int);
-    buffer_create_info.usage =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transfer_flags;
     buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &_in_buffer));
+    VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &storage.buffer));
 
     VkMemoryRequirements memory_requirements;
-    vkGetBufferMemoryRequirements(_device, _in_buffer, &memory_requirements);
+    vkGetBufferMemoryRequirements(_device, storage.buffer, &memory_requirements);
 
     VkMemoryAllocateInfo allocate_info = {};
     allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -357,34 +371,55 @@ class VulkanTestBase {
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     REQUIRE(allocate_info.memoryTypeIndex != VK_MAX_MEMORY_TYPES);
 
-    VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &_in_buffer_memory));
-    VK_CHECK_RESULT(vkBindBufferMemory(_device, _in_buffer, _in_buffer_memory, 0));
+    VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &storage.memory));
+    VK_CHECK_RESULT(vkBindBufferMemory(_device, storage.buffer, storage.memory, 0));
+
+    return storage;
   }
 
-  void CreateOutBuffer() {
-    VkBufferCreateInfo buffer_create_info = {};
-    buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_create_info.size = sizeof(int);
-    buffer_create_info.usage =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &_out_buffer));
+  bool _enable_validation = false;
+  VkInstance _instance = VK_NULL_HANDLE;
+  VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
+  VkDevice _device = VK_NULL_HANDLE;
+  VkQueue _queue = VK_NULL_HANDLE;
+  VkCommandPool _command_pool = VK_NULL_HANDLE;
+  VkCommandBuffer _command_buffer = VK_NULL_HANDLE;
+  uint32_t _compute_family_queue_idx = 0u;
 
-    VkMemoryRequirements memory_requiremenets;
-    vkGetBufferMemoryRequirements(_device, _out_buffer, &memory_requiremenets);
+  std::vector<const char*> _required_instance_extensions{
+      VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+      VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME};
+  std::vector<const char*> _required_device_extensions{VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+                                                       VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
+  std::vector<const char*> _enabled_layers;
+};
 
-    VkMemoryAllocateInfo allocate_info = {};
-    allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocate_info.allocationSize = memory_requiremenets.size;
-    allocate_info.memoryTypeIndex =
-        FindMemoryType(memory_requiremenets.memoryTypeBits,
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
-    VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &_out_buffer_memory));
-    VK_CHECK_RESULT(vkBindBufferMemory(_device, _out_buffer, _out_buffer_memory, 0));
+class VulkanSemaphoreTests : private VulkanTestBase {
+ public:
+  VulkanSemaphoreTests(bool enable_validation) : VulkanTestBase(enable_validation) {
+    constexpr auto size = sizeof(int);
+    _in = CreateStorage(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    _out = CreateStorage(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+    VK_CHECK_RESULT(
+        vkMapMemory(_device, _in.memory, 0, sizeof(int), 0, reinterpret_cast<void**>(&_in_host)));
+    VK_CHECK_RESULT(
+        vkMapMemory(_device, _out.memory, 0, sizeof(int), 0, reinterpret_cast<void**>(&_out_host)));
   }
 
-  void Blahem() {
+  ~VulkanSemaphoreTests() {
+    if (_in_host != nullptr) vkUnmapMemory(_device, _in.memory);
+    if (_out_host != nullptr) vkUnmapMemory(_device, _out.memory);
+
+    if (_in.buffer != VK_NULL_HANDLE) vkDestroyBuffer(_device, _in.buffer, nullptr);
+    if (_out.buffer != VK_NULL_HANDLE) vkDestroyBuffer(_device, _out.buffer, nullptr);
+
+    if (_in.memory != VK_NULL_HANDLE) vkFreeMemory(_device, _in.memory, nullptr);
+    if (_out.memory != VK_NULL_HANDLE) vkFreeMemory(_device, _out.memory, nullptr);
+  }
+
+  void run() {
     VkBufferCopy buffer_copy = {};
     buffer_copy.srcOffset = 0;
     buffer_copy.dstOffset = 0;
@@ -394,7 +429,7 @@ class VulkanTestBase {
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK_RESULT(vkBeginCommandBuffer(_command_buffer, &begin_info));
-    vkCmdCopyBuffer(_command_buffer, _in_buffer, _out_buffer, 1, &buffer_copy);
+    vkCmdCopyBuffer(_command_buffer, _in.buffer, _out.buffer, 1, &buffer_copy);
     VK_CHECK_RESULT(vkEndCommandBuffer(_command_buffer));
 
     VkFence fence;
@@ -437,45 +472,25 @@ class VulkanTestBase {
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = &semaphore;
 
-    int* in_data;
-    VK_CHECK_RESULT(vkMapMemory(_device, _in_buffer_memory, 0, sizeof(int), 0,
-                                reinterpret_cast<void**>(&in_data)));
-    *in_data = 42;
-    vkUnmapMemory(_device, _in_buffer_memory);
+    *_in_host = 42;
 
     VK_CHECK_RESULT(vkQueueSubmit(_queue, 1, &submit_info, fence));
     VK_CHECK_RESULT(vkWaitForFences(_device, 1, &fence, VK_TRUE, 10'000'000'000));
     std::cout << cudaGetErrorName(cudaStreamSynchronize(nullptr)) << std::endl;
-    std::cout << "Blahem" << std::endl;
 
-    int* out_data;
-    VK_CHECK_RESULT(vkMapMemory(_device, _out_buffer_memory, 0, sizeof(int), 0,
-                                reinterpret_cast<void**>(&out_data)));
-    std::cout << *out_data << std::endl;
-    vkUnmapMemory(_device, _out_buffer_memory);
+    std::cout << *_out_host << std::endl;
+    vkUnmapMemory(_device, _out.memory);
+    vkUnmapMemory(_device, _in.memory);
   }
 
-  VkInstance _instance = VK_NULL_HANDLE;
-  VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
-  VkDevice _device = VK_NULL_HANDLE;
-  VkQueue _queue = VK_NULL_HANDLE;
-  VkPipeline _pipeline = VK_NULL_HANDLE;
-  VkPipelineLayout _pipeline_Layout = VK_NULL_HANDLE;
-  VkCommandPool _command_pool = VK_NULL_HANDLE;
-  VkCommandBuffer _command_buffer = VK_NULL_HANDLE;
-  VkBuffer _in_buffer = VK_NULL_HANDLE;
-  VkBuffer _out_buffer = VK_NULL_HANDLE;
-  VkDeviceMemory _in_buffer_memory = VK_NULL_HANDLE;
-  VkDeviceMemory _out_buffer_memory = VK_NULL_HANDLE;
-  uint32_t _compute_family_queue_idx = 0u;
-  bool _enable_validation = false; 
-
-  std::vector<const char*> _required_instance_extensions{
-      VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-      VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME};
-  std::vector<const char*> _required_device_extensions{VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
-                                                      VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
-  std::vector<const char*> _enabled_layers;
+ private:
+  Storage _in;
+  Storage _out;
+  int* _in_host = nullptr;
+  int* _out_host = nullptr;
 };
 
-TEST_CASE("Blahem") { VulkanTestBase app(true); }
+TEST_CASE("Blahem") { 
+  VulkanSemaphoreTests test(true);
+  test.run(); 
+}
