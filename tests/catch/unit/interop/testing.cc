@@ -42,7 +42,6 @@ THE SOFTWARE.
     REQUIRE(VK_SUCCESS == res);                                                                    \
   }
 
-
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
               const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void*) {
@@ -50,9 +49,11 @@ DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFla
   return VK_FALSE;
 }
 
-class VulkanTestBase {
+constexpr bool enable_validation = true;
+
+class VulkanTest {
  public:
-  VulkanTestBase(bool enable_validation) : _enable_validation{enable_validation} {
+  VulkanTest(bool enable_validation) : _enable_validation{enable_validation} {
     if (_enable_validation) {
       _required_instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -62,7 +63,21 @@ class VulkanTestBase {
     CreateCommandBuffer();
   }
 
-  ~VulkanTestBase() {
+  ~VulkanTest() {
+    for (const auto s : _semaphores) {
+      vkDestroySemaphore(_device, s, nullptr);
+    }
+
+    for (const auto f : _fences) {
+      vkDestroyFence(_device, f, nullptr);
+    }
+
+    for (const auto& s : _stores) {
+      vkUnmapMemory(_device, s.memory);
+      vkDestroyBuffer(_device, s.buffer, nullptr);
+      vkFreeMemory(_device, s.memory, nullptr);
+    }
+
     if (_command_buffer != VK_NULL_HANDLE)
       vkFreeCommandBuffers(_device, _command_pool, 1, &_command_buffer);
 
@@ -239,66 +254,6 @@ class VulkanTestBase {
     return VK_MAX_MEMORY_TYPES;
   }
 
-  struct Storage {
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    uint32_t size = 0u;
-  };
-
-  Storage CreateStorage(uint32_t size, VkBufferUsageFlagBits transfer_flags) {
-    Storage storage;
-    storage.size = size;
-
-    VkBufferCreateInfo buffer_create_info = {};
-    buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_create_info.size = sizeof(int);
-    buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transfer_flags;
-    buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &storage.buffer));
-
-    VkMemoryRequirements memory_requirements;
-    vkGetBufferMemoryRequirements(_device, storage.buffer, &memory_requirements);
-
-    VkMemoryAllocateInfo allocate_info = {};
-    allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocate_info.allocationSize = memory_requirements.size;
-    allocate_info.memoryTypeIndex =
-        FindMemoryType(memory_requirements.memoryTypeBits,
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    REQUIRE(allocate_info.memoryTypeIndex != VK_MAX_MEMORY_TYPES);
-
-    VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &storage.memory));
-    VK_CHECK_RESULT(vkBindBufferMemory(_device, storage.buffer, storage.memory, 0));
-
-    return storage;
-  }
-
-  VkSemaphore CreateExternalSemaphore(VkExternalSemaphoreHandleTypeFlagBits handle_type,
-                                      bool is_timeline_semaphore, uint64_t initial_value = 0) {
-    VkExportSemaphoreCreateInfoKHR export_sem_create_info = {};
-    export_sem_create_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
-    export_sem_create_info.handleTypes = handle_type;
-
-    if (is_timeline_semaphore) {
-      VkSemaphoreTypeCreateInfo timeline_create_info = {};
-      timeline_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-      timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-      timeline_create_info.initialValue = initial_value;
-      export_sem_create_info.pNext = &timeline_create_info;
-    } else {
-      export_sem_create_info.pNext = nullptr;
-    }
-
-    VkSemaphoreCreateInfo semaphore_create_info;
-    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-    semaphore_create_info.pNext = &export_sem_create_info;
-
-    VkSemaphore semaphore;
-    VK_CHECK_RESULT(vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &semaphore));
-
-    return semaphore;
-  }
-
   inline cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(
       const VkExternalSemaphoreHandleTypeFlagBits handle_type, bool is_timeline_semaphore) {
     if (handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
@@ -314,7 +269,6 @@ class VulkanTestBase {
 
     throw std::invalid_argument("Invalid vulkan semaphore handle type");
   }
-
 
 #ifdef _WIN64
   HANDLE
@@ -338,8 +292,10 @@ class VulkanTestBase {
         VK_SUCCESS) {
       throw std::runtime_error("Failed to retrieve handle for buffer!");
     }
-    return handle;
-  }
+    VulkanSemaphoreTests(bool timeline_semaphore, bool enable_validation)
+        : VulkanTestBase(enable_validation), _timeline_semaphore{timeline_semaphore} {}
+
+    void run() { return handle; }
 #else
   int GetSemaphoreHandle(VkSemaphore semaphore,
                          const VkExternalSemaphoreHandleTypeFlagBits handle_type) {
@@ -365,133 +321,199 @@ class VulkanTestBase {
   }
 #endif
 
-  cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(
-      VkSemaphore vk_sem, VkExternalSemaphoreHandleTypeFlagBits handle_type,
-      bool is_timeline_semaphore) {
-    cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
-    sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(handle_type, is_timeline_semaphore);
+   public:
+    cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(
+        VkSemaphore vk_sem, VkExternalSemaphoreHandleTypeFlagBits handle_type,
+        bool is_timeline_semaphore) {
+      cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
+      sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(handle_type, is_timeline_semaphore);
 #ifdef _WIN64
-    sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem, handle_type);
+      sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem, handle_type);
 #else
     sem_handle_desc.handle.fd = GetSemaphoreHandle(vk_sem, handle_type);
 #endif
-    sem_handle_desc.flags = 0;
+      sem_handle_desc.flags = 0;
 
-    return sem_handle_desc;
-  }
+      return sem_handle_desc;
+    }
 
-  VkFence CreateFence() {
-    VkFence fence;
-    VkFenceCreateInfo fence_create_info = {};
-    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create_info.flags = 0;
-    VK_CHECK_RESULT(vkCreateFence(_device, &fence_create_info, nullptr, &fence));
+    VkFence CreateFence() {
+      VkFence fence;
+      VkFenceCreateInfo fence_create_info = {};
+      fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fence_create_info.flags = 0;
+      VK_CHECK_RESULT(vkCreateFence(_device, &fence_create_info, nullptr, &fence));
 
-    return fence;
-  }
+      _fences.push_back(fence);
+      return fence;
+    }
 
-  bool _enable_validation = false;
-  VkInstance _instance = VK_NULL_HANDLE;
-  VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
-  VkDevice _device = VK_NULL_HANDLE;
-  VkQueue _queue = VK_NULL_HANDLE;
-  VkCommandPool _command_pool = VK_NULL_HANDLE;
-  VkCommandBuffer _command_buffer = VK_NULL_HANDLE;
-  uint32_t _compute_family_queue_idx = 0u;
+    VkSemaphore CreateExternalSemaphore(VkExternalSemaphoreHandleTypeFlagBits handle_type,
+                                        bool is_timeline_semaphore, uint64_t initial_value = 0) {
+      VkExportSemaphoreCreateInfoKHR export_sem_create_info = {};
+      export_sem_create_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
+      export_sem_create_info.handleTypes = handle_type;
 
-  std::vector<const char*> _required_instance_extensions{
-      VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-      VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME};
-  std::vector<const char*> _required_device_extensions{VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
-                                                       VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
-  std::vector<const char*> _enabled_layers;
-};
+      if (is_timeline_semaphore) {
+        VkSemaphoreTypeCreateInfo timeline_create_info = {};
+        timeline_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timeline_create_info.initialValue = initial_value;
+        export_sem_create_info.pNext = &timeline_create_info;
+      } else {
+        export_sem_create_info.pNext = nullptr;
+      }
+
+      VkSemaphoreCreateInfo semaphore_create_info;
+      semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+      semaphore_create_info.pNext = &export_sem_create_info;
+
+      VkSemaphore semaphore;
+      VK_CHECK_RESULT(vkCreateSemaphore(_device, &semaphore_create_info, nullptr, &semaphore));
+
+      _semaphores.push_back(semaphore);
+      return semaphore;
+    }
+
+   private:
+    struct Storage {
+      VkBuffer buffer = VK_NULL_HANDLE;
+      VkDeviceMemory memory = VK_NULL_HANDLE;
+      uint32_t size = 0u;
+    };
+
+   public:
+    template <typename T> struct MappedBuffer {
+      VkBuffer buffer = VK_NULL_HANDLE;
+      T* host_ptr = nullptr;
+    };
+
+    template <typename T>
+    MappedBuffer<T> CreateMappedStorage(uint32_t count, VkBufferUsageFlagBits transfer_flags) {
+      Storage storage;
+      storage.size = count * sizeof(T);
+
+      VkBufferCreateInfo buffer_create_info = {};
+      buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+      buffer_create_info.size = sizeof(int);
+      buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transfer_flags;
+      buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+      VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &storage.buffer));
+
+      VkMemoryRequirements memory_requirements;
+      vkGetBufferMemoryRequirements(_device, storage.buffer, &memory_requirements);
+
+      VkMemoryAllocateInfo allocate_info = {};
+      allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+      allocate_info.allocationSize = memory_requirements.size;
+      allocate_info.memoryTypeIndex = FindMemoryType(
+          memory_requirements.memoryTypeBits,
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+      REQUIRE(allocate_info.memoryTypeIndex != VK_MAX_MEMORY_TYPES);
+
+      VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &storage.memory));
+      VK_CHECK_RESULT(vkBindBufferMemory(_device, storage.buffer, storage.memory, 0));
+
+      T* host_ptr = nullptr;
+      VK_CHECK_RESULT(vkMapMemory(_device, storage.memory, 0, storage.size, 0,
+                                  reinterpret_cast<void**>(&host_ptr)));
+
+      _stores.push_back(storage);
+      return MappedBuffer<T>{storage.buffer, host_ptr};
+    }
+
+    VkDevice GetDevice() const { return _device; }
+
+    VkCommandBuffer GetCommandBuffer() const { return _command_buffer; }
+
+    VkQueue GetQueue() const { return _queue; }
+
+   private:
+    bool _enable_validation = false;
+    VkInstance _instance = VK_NULL_HANDLE;
+    VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
+    VkDevice _device = VK_NULL_HANDLE;
+    VkQueue _queue = VK_NULL_HANDLE;
+    VkCommandPool _command_pool = VK_NULL_HANDLE;
+    VkCommandBuffer _command_buffer = VK_NULL_HANDLE;
+    uint32_t _compute_family_queue_idx = 0u;
+
+    std::vector<const char*> _required_instance_extensions{
+        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME};
+    std::vector<const char*> _required_device_extensions{
+        VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
+    std::vector<const char*> _enabled_layers;
 
 
-class VulkanSemaphoreTests : private VulkanTestBase {
- public:
-  VulkanSemaphoreTests(bool timeline_semaphore, bool enable_validation)
-      : VulkanTestBase(enable_validation), _timeline_semaphore{timeline_semaphore} {
-    constexpr auto size = sizeof(int);
-    _in = CreateStorage(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    _out = CreateStorage(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    std::vector<VkSemaphore> _semaphores;
+    std::vector<VkFence> _fences;
+    std::vector<Storage> _stores;
+  };
 
-    _semaphore = CreateExternalSemaphore(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
-                                         _timeline_semaphore);
-    _fence = CreateFence();
+  void SingleSemaphoreTest(bool timeline_semaphore) {
+    VulkanTest vkt(enable_validation);
 
-    VK_CHECK_RESULT(
-        vkMapMemory(_device, _in.memory, 0, sizeof(int), 0, reinterpret_cast<void**>(&_in_host)));
-    VK_CHECK_RESULT(
-        vkMapMemory(_device, _out.memory, 0, sizeof(int), 0, reinterpret_cast<void**>(&_out_host)));
-  }
+    constexpr uint32_t count = 1;
+    const auto [src_buffer, src_host] =
+        vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    const auto [dst_buffer, dst_host] =
+        vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
-  ~VulkanSemaphoreTests() {
-    if (_semaphore != nullptr) vkDestroySemaphore(_device, _semaphore, nullptr);
-    if (_fence != nullptr) vkDestroyFence(_device, _fence, nullptr);
-
-    if (_in_host != nullptr) vkUnmapMemory(_device, _in.memory);
-    if (_out_host != nullptr) vkUnmapMemory(_device, _out.memory);
-
-    if (_in.buffer != VK_NULL_HANDLE) vkDestroyBuffer(_device, _in.buffer, nullptr);
-    if (_out.buffer != VK_NULL_HANDLE) vkDestroyBuffer(_device, _out.buffer, nullptr);
-
-    if (_in.memory != VK_NULL_HANDLE) vkFreeMemory(_device, _in.memory, nullptr);
-    if (_out.memory != VK_NULL_HANDLE) vkFreeMemory(_device, _out.memory, nullptr);
-  }
-
-  void run() {
-    VkBufferCopy buffer_copy = {};
-    buffer_copy.size = sizeof(int);
-
+    const auto command_buffer = vkt.GetCommandBuffer();
     VkCommandBufferBeginInfo begin_info = {};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    VK_CHECK_RESULT(vkBeginCommandBuffer(_command_buffer, &begin_info));
-    vkCmdCopyBuffer(_command_buffer, _in.buffer, _out.buffer, 1, &buffer_copy);
-    VK_CHECK_RESULT(vkEndCommandBuffer(_command_buffer));
 
-    const auto cuda_sem_handle_desc = BuildSemaphoreDescriptor(
-        _semaphore, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, _timeline_semaphore);
+    VK_CHECK_RESULT(vkBeginCommandBuffer(command_buffer, &begin_info));
+    VkBufferCopy buffer_copy = {};
+    buffer_copy.size = count * sizeof(*src_host);
+    vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &buffer_copy);
+    VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer));
+
+    const auto semaphore = vkt.CreateExternalSemaphore(
+        VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, timeline_semaphore);
+
+    const auto cuda_sem_handle_desc = vkt.BuildSemaphoreDescriptor(
+        semaphore, VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, timeline_semaphore);
 
     cudaExternalSemaphore_t cuda_ext_semaphore;
     E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
 
     cudaExternalSemaphoreWaitParams cuda_ext_semaphore_wait_params = {};
     cuda_ext_semaphore_wait_params.flags = 0;
-    cuda_ext_semaphore_wait_params.params.fence.value = _timeline_semaphore ? 1 : 0;
+    cuda_ext_semaphore_wait_params.params.fence.value = timeline_semaphore ? 1 : 0;
     E(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &cuda_ext_semaphore_wait_params, 1,
                                       nullptr));
-    REQUIRE(cudaStreamQuery(nullptr) == cudaErrorNotReady); 
+    REQUIRE(cudaStreamQuery(nullptr) == cudaErrorNotReady);
 
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &_command_buffer;
+    submit_info.pCommandBuffers = &command_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &_semaphore;
+    submit_info.pSignalSemaphores = &semaphore;
 
-    *_in_host = 42;
+    *src_host = 42;
 
-    VK_CHECK_RESULT(vkQueueSubmit(_queue, 1, &submit_info, _fence));
-    VK_CHECK_RESULT(vkWaitForFences(_device, 1, &_fence, VK_TRUE, 10'000'000'000));
-    // TODO change to StreamQuery polling loop 
-    E(cudaStreamSynchronize(nullptr));
+    const auto fence = vkt.CreateFence();
+    VK_CHECK_RESULT(vkQueueSubmit(vkt.GetQueue(), 1, &submit_info, fence));
+    VK_CHECK_RESULT(
+        vkWaitForFences(vkt.GetDevice(), 1, &fence, VK_TRUE, 5'000'000'000 /*5 seconds*/));
 
-    REQUIRE(42 == *_out_host);
+    // Sometimes in CUDA the stream is not immediately ready after the fence wait is finished
+    cudaError_t query_result = cudaErrorNotReady;
+    for (auto _ = 0; _ < 5; ++_) {
+      if ((query_result = cudaStreamQuery(nullptr)) != cudaSuccess) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+      }
+    }
+    REQUIRE(cudaSuccess == query_result);
+
+    REQUIRE(42 == *dst_host);
   }
 
- private:
-  bool _timeline_semaphore = false;
-  VkSemaphore _semaphore = VK_NULL_HANDLE;
-  VkFence _fence = VK_NULL_HANDLE;
-  Storage _in;
-  Storage _out;
-  int* _in_host = nullptr;
-  int* _out_host = nullptr;
-};
 
-TEST_CASE("Blahem") {
-  VulkanSemaphoreTests test(false, true);
-  test.run();
-}
+  TEST_CASE("Binary_Semaphore") { SingleSemaphoreTest(false); }
+
+  TEST_CASE("Timeline_Semaphore") { SingleSemaphoreTest(true); }
