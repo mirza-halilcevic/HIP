@@ -38,6 +38,7 @@ static void PollStream(cudaStream_t stream, cudaError_t expected) {
 
 TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Binary_Semaphore") {
   VulkanTest vkt(enable_validation);
+  using SemaphoreType = VulkanTest::SemaphoreType;
 
   constexpr uint32_t count = 1;
   const auto [src_buffer, src_host] =
@@ -56,8 +57,8 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Binary_Semaphore") {
   vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &buffer_copy);
   VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer));
 
-  const auto semaphore = vkt.CreateExternalSemaphore(false);
-  const auto cuda_sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, false);
+  const auto semaphore = vkt.CreateExternalSemaphore(SemaphoreType::Binary);
+  const auto cuda_sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, SemaphoreType::Binary);
   cudaExternalSemaphore_t cuda_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
 
@@ -91,14 +92,15 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Binary_Semaphore") {
 
 TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
   VulkanTest vkt(enable_validation);
-  constexpr bool timeline_semaphore = true;
+  using SemaphoreType = VulkanTest::SemaphoreType;
 
   const auto [wait_value, signal_value] =
       GENERATE(std::make_pair(2, 2), std::make_pair(2, 3), std::make_pair(3, 2));
   INFO("Wait value: " << wait_value << ", signal value: " << signal_value);
 
-  const auto semaphore = vkt.CreateExternalSemaphore(timeline_semaphore);
-  const auto cuda_sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, timeline_semaphore);
+  const auto semaphore = vkt.CreateExternalSemaphore(SemaphoreType::Timeline);
+  const auto cuda_sem_handle_desc =
+      vkt.BuildSemaphoreDescriptor(semaphore, SemaphoreType::Timeline);
   cudaExternalSemaphore_t cuda_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
 
@@ -126,6 +128,7 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
 
 TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Wait_On_Multiple_Semaphores") {
   VulkanTest vkt(enable_validation);
+  using SemaphoreType = VulkanTest::SemaphoreType;
 
   constexpr uint32_t count = 1;
   const auto [src_buffer, src_host] =
@@ -144,13 +147,15 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Wait_On_Multiple_Semapho
   vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &buffer_copy);
   VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer));
 
-  const auto binary_semaphore = vkt.CreateExternalSemaphore(false);
-  const auto cuda_binary_sem_handle_desc = vkt.BuildSemaphoreDescriptor(binary_semaphore, false);
+  const auto binary_semaphore = vkt.CreateExternalSemaphore(SemaphoreType::Binary);
+  const auto cuda_binary_sem_handle_desc =
+      vkt.BuildSemaphoreDescriptor(binary_semaphore, SemaphoreType::Binary);
   cudaExternalSemaphore_t cuda_binary_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_binary_ext_semaphore, &cuda_binary_sem_handle_desc));
 
-  const auto timeline_semaphore = vkt.CreateExternalSemaphore(true);
-  const auto cuda_timeline_sem_handle_desc = vkt.BuildSemaphoreDescriptor(timeline_semaphore, true);
+  const auto timeline_semaphore = vkt.CreateExternalSemaphore(SemaphoreType::Timeline);
+  const auto cuda_timeline_sem_handle_desc =
+      vkt.BuildSemaphoreDescriptor(timeline_semaphore, SemaphoreType::Timeline);
   cudaExternalSemaphore_t cuda_timeline_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_timeline_ext_semaphore, &cuda_timeline_sem_handle_desc));
 
@@ -192,4 +197,50 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Wait_On_Multiple_Semapho
 
   E(cudaDestroyExternalSemaphore(cuda_timeline_ext_semaphore));
   E(cudaDestroyExternalSemaphore(cuda_binary_ext_semaphore));
+}
+
+static cudaExternalSemaphore_t ImportTimelineSemaphore(VulkanTest& vkt) {
+  const auto semaphore = vkt.CreateExternalSemaphore(VulkanTest::SemaphoreType::Timeline);
+  const auto sem_handle_desc =
+      vkt.BuildSemaphoreDescriptor(semaphore, VulkanTest::SemaphoreType::Timeline);
+  cudaExternalSemaphore_t cuda_ext_semaphore;
+  E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &sem_handle_desc));
+
+  return cuda_ext_semaphore;
+}
+
+TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Negative_Parameters") {
+  VulkanTest vkt(enable_validation);
+  cudaExternalSemaphoreWaitParams wait_params = {};
+  wait_params.params.fence.value = 1;
+
+  SECTION("extSemArray == nullptr") {
+    REQUIRE(cudaWaitExternalSemaphoresAsync(nullptr, &wait_params, 1) == cudaErrorInvalidValue);
+  }
+
+  SECTION("paramsArray == nullptr") {
+    const auto cuda_ext_semaphore = ImportTimelineSemaphore(vkt);
+    REQUIRE(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, nullptr, 1) ==
+            cudaErrorInvalidValue);
+    E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
+  }
+
+  SECTION("Wait params flag != 0") {
+    const auto cuda_ext_semaphore = ImportTimelineSemaphore(vkt);
+    wait_params.flags = 1;
+    REQUIRE(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &wait_params, 1) ==
+            cudaErrorInvalidValue);
+    E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
+  }
+
+  SECTION("Invalid stream") {
+    const auto cuda_ext_semaphore = ImportTimelineSemaphore(vkt);
+    cudaStream_t stream = nullptr;
+    E(cudaStreamCreate(&stream));
+    E(cudaStreamDestroy(stream));
+    // Doesn't want to compile for some reason
+    // REQUIRE(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &wait_params, 1, stream) ==
+    //         cudaErrorDeviceUninitilialized);
+    E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
+  }
 }

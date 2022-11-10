@@ -35,13 +35,12 @@ VkFence VulkanTest::CreateFence() {
   return fence;
 }
 
-VkSemaphore VulkanTest::CreateExternalSemaphore(bool is_timeline_semaphore,
-                                                uint64_t initial_value) {
+VkSemaphore VulkanTest::CreateExternalSemaphore(SemaphoreType sem_type, uint64_t initial_value) {
   VkExportSemaphoreCreateInfoKHR export_sem_create_info = {};
   export_sem_create_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
   export_sem_create_info.handleTypes = _sem_handle_type;
 
-  if (is_timeline_semaphore) {
+  if (sem_type == SemaphoreType::Timeline) {
     VkSemaphoreTypeCreateInfo timeline_create_info = {};
     timeline_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
     timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
@@ -63,9 +62,9 @@ VkSemaphore VulkanTest::CreateExternalSemaphore(bool is_timeline_semaphore,
 }
 
 cudaExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore vk_sem,
-                                                                     bool is_timeline_semaphore) {
+                                                                     SemaphoreType sem_type) {
   cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
-  sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(is_timeline_semaphore);
+  sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(sem_type);
 #ifdef _WIN64
   sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem);
 #else
@@ -247,16 +246,18 @@ uint32_t VulkanTest::FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyF
 }
 
 cudaExternalSemaphoreHandleType VulkanTest::VulkanHandleTypeToCudaHandleType(
-    bool is_timeline_semaphore) {
+    SemaphoreType sem_type) {
   if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
-    return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
-                                 : cudaExternalSemaphoreHandleTypeOpaqueWin32;
+    return sem_type == SemaphoreType::Timeline
+        ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
+        : cudaExternalSemaphoreHandleTypeOpaqueWin32;
   } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
-    return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
-                                 : cudaExternalSemaphoreHandleTypeOpaqueWin32Kmt;
+    return sem_type == SemaphoreType::Timeline
+        ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
+        : cudaExternalSemaphoreHandleTypeOpaqueWin32Kmt;
   } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
-    return is_timeline_semaphore ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreFd
-                                 : cudaExternalSemaphoreHandleTypeOpaqueFd;
+    return sem_type == SemaphoreType::Timeline ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreFd
+                                               : cudaExternalSemaphoreHandleTypeOpaqueFd;
   }
 
   throw std::invalid_argument("Invalid vulkan semaphore handle type");
