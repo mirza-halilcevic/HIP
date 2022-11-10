@@ -206,3 +206,8 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
   _stores.push_back(storage);
   return MappedBuffer<T>{storage.buffer, host_ptr};
 }
+
+// Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled
+void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iterations = 5);
+
+cudaExternalSemaphore_t ImportTimelineSemaphore(VulkanTest& vkt); 

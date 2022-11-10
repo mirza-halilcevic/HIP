@@ -23,7 +23,7 @@ THE SOFTWARE.
 
 constexpr bool enable_validation = false;
 
-TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Binary_Semaphore") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Binary_Semaphore") {
   VulkanTest vkt(enable_validation);
   using SemaphoreType = VulkanTest::SemaphoreType;
 
@@ -34,7 +34,6 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Binary_Semaphore") {
       vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
   const auto command_buffer = vkt.GetCommandBuffer();
-
   VkCommandBufferBeginInfo begin_info = {};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -48,42 +47,33 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Binary_Semaphore") {
   const auto cuda_sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, SemaphoreType::Binary);
   cudaExternalSemaphore_t cuda_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
-
-  cudaExternalSemaphoreWaitParams cuda_ext_semaphore_wait_params = {};
-  cuda_ext_semaphore_wait_params.flags = 0;
-  cuda_ext_semaphore_wait_params.params.fence.value = 0;
-  E(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &cuda_ext_semaphore_wait_params, 1,
-                                    nullptr));
-  PollStream(nullptr, cudaErrorNotReady);
+  const auto fence = vkt.CreateFence();
 
   VkSubmitInfo submit_info = {};
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.commandBufferCount = 1;
   submit_info.pCommandBuffers = &command_buffer;
-  submit_info.signalSemaphoreCount = 1;
-  submit_info.pSignalSemaphores = &semaphore;
-
-  *src_host = 42;
-
-  const auto fence = vkt.CreateFence();
+  submit_info.waitSemaphoreCount = 1;
+  submit_info.pWaitSemaphores = &semaphore;
   VK_CHECK_RESULT(vkQueueSubmit(vkt.GetQueue(), 1, &submit_info, fence));
-  VK_CHECK_RESULT(
-      vkWaitForFences(vkt.GetDevice(), 1, &fence, VK_TRUE, 5'000'000'000 /*5 seconds*/));
 
+  REQUIRE(vkGetFenceStatus(vkt.GetDevice(), fence) == VK_NOT_READY);
+
+  cudaExternalSemaphoreSignalParams signal_params = {};
+  signal_params.params.fence.value = 0;
+  E(cudaSignalExternalSemaphoresAsync(&cuda_ext_semaphore, &signal_params, 1));
   PollStream(nullptr, cudaSuccess);
 
-  REQUIRE(42 == *dst_host);
+  VK_CHECK_RESULT(
+      vkWaitForFences(vkt.GetDevice(), 1, &fence, VK_TRUE, 5'000'000'000 /*5 seconds*/));
 
   E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
 }
 
-TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
   VulkanTest vkt(enable_validation);
   using SemaphoreType = VulkanTest::SemaphoreType;
-
-  const auto [wait_value, signal_value] =
-      GENERATE(std::make_pair(2, 2), std::make_pair(2, 3), std::make_pair(3, 2));
-  INFO("Wait value: " << wait_value << ", signal value: " << signal_value);
+  constexpr uint64_t signal_value = 2;
 
   const auto semaphore = vkt.CreateExternalSemaphore(SemaphoreType::Timeline);
   const auto cuda_sem_handle_desc =
@@ -91,29 +81,21 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
   cudaExternalSemaphore_t cuda_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
 
-  cudaExternalSemaphoreWaitParams cuda_ext_semaphore_wait_params = {};
-  cuda_ext_semaphore_wait_params.flags = 0;
-  cuda_ext_semaphore_wait_params.params.fence.value = wait_value;
-  E(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &cuda_ext_semaphore_wait_params, 1,
-                                    nullptr));
-  PollStream(nullptr, cudaErrorNotReady);
+  cudaExternalSemaphoreSignalParams signal_params = {};
+  signal_params.params.fence.value = signal_value;
 
-  VkSemaphoreSignalInfo signal_info = {};
-  signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
-  signal_info.semaphore = semaphore;
-  signal_info.value = signal_value;
-  VK_CHECK_RESULT(vkSignalSemaphore(vkt.GetDevice(), &signal_info));
-  if (wait_value > signal_value) {
-    PollStream(nullptr, cudaErrorNotReady);
-    signal_info.value = wait_value;
-    VK_CHECK_RESULT(vkSignalSemaphore(vkt.GetDevice(), &signal_info));
-  }
+  E(cudaSignalExternalSemaphoresAsync(&cuda_ext_semaphore, &signal_params, 1));
   PollStream(nullptr, cudaSuccess);
+
+  uint64_t sem_value = 0u;
+  VK_CHECK_RESULT(vkGetSemaphoreCounterValue(vkt.GetDevice(), semaphore, &sem_value));
+
+  REQUIRE(2 == signal_value);
 
   E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
 }
 
-TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Wait_On_Multiple_Semaphores") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Multiple_Semaphores") {
   VulkanTest vkt(enable_validation);
   using SemaphoreType = VulkanTest::SemaphoreType;
 
@@ -124,7 +106,6 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Wait_On_Multiple_Semapho
       vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
   const auto command_buffer = vkt.GetCommandBuffer();
-
   VkCommandBufferBeginInfo begin_info = {};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -146,66 +127,62 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Positive_Wait_On_Multiple_Semapho
   cudaExternalSemaphore_t cuda_timeline_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_timeline_ext_semaphore, &cuda_timeline_sem_handle_desc));
 
-  cudaExternalSemaphoreWaitParams binary_semaphore_wait_params = {};
-  binary_semaphore_wait_params.params.fence.value = 0;
+  uint64_t wait_values[] = {1, 0};
+  VkTimelineSemaphoreSubmitInfo timeline_submit_info = {};
+  timeline_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+  timeline_submit_info.waitSemaphoreValueCount = 2;
+  timeline_submit_info.pWaitSemaphoreValues = wait_values;
 
-  cudaExternalSemaphoreWaitParams timeline_semaphore_wait_params = {};
-  timeline_semaphore_wait_params.params.fence.value = 1;
-
-  cudaExternalSemaphore_t ext_semaphores[] = {cuda_binary_ext_semaphore,
-                                              cuda_timeline_ext_semaphore};
-  cudaExternalSemaphoreWaitParams wait_params[] = {binary_semaphore_wait_params,
-                                                   timeline_semaphore_wait_params};
-  E(cudaWaitExternalSemaphoresAsync(ext_semaphores, wait_params, 2));
-
-  PollStream(nullptr, cudaErrorNotReady);
-
-  VkSemaphoreSignalInfo signal_info = {};
-  signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO;
-  signal_info.semaphore = timeline_semaphore;
-  signal_info.value = 1;
-  VK_CHECK_RESULT(vkSignalSemaphore(vkt.GetDevice(), &signal_info));
-
-  PollStream(nullptr, cudaErrorNotReady);
-
+  VkSemaphore wait_semaphores[] = {timeline_semaphore, binary_semaphore};
   VkSubmitInfo submit_info = {};
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.commandBufferCount = 1;
   submit_info.pCommandBuffers = &command_buffer;
-  submit_info.signalSemaphoreCount = 1;
-  submit_info.pSignalSemaphores = &binary_semaphore;
-
+  submit_info.waitSemaphoreCount = 2;
+  submit_info.pWaitSemaphores = wait_semaphores;
+  submit_info.pNext = &timeline_submit_info;
   const auto fence = vkt.CreateFence();
   VK_CHECK_RESULT(vkQueueSubmit(vkt.GetQueue(), 1, &submit_info, fence));
+
+  REQUIRE(vkGetFenceStatus(vkt.GetDevice(), fence) == VK_NOT_READY);
+
+  cudaExternalSemaphoreSignalParams binary_signal_params = {};
+  binary_signal_params.params.fence.value = 0;
+  cudaExternalSemaphoreSignalParams timeline_signal_params = {};
+  timeline_signal_params.params.fence.value = 1;
+  cudaExternalSemaphore_t ext_semaphores[] = {cuda_binary_ext_semaphore,
+                                              cuda_timeline_ext_semaphore};
+  cudaExternalSemaphoreSignalParams signal_params[] = {binary_signal_params,
+                                                       timeline_signal_params};
+  E(cudaSignalExternalSemaphoresAsync(ext_semaphores, signal_params, 2));
+
   VK_CHECK_RESULT(
       vkWaitForFences(vkt.GetDevice(), 1, &fence, VK_TRUE, 5'000'000'000 /*5 seconds*/));
 
-  PollStream(nullptr, cudaSuccess);
-
-  E(cudaDestroyExternalSemaphore(cuda_timeline_ext_semaphore));
   E(cudaDestroyExternalSemaphore(cuda_binary_ext_semaphore));
+  E(cudaDestroyExternalSemaphore(cuda_timeline_ext_semaphore));
 }
 
-TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Negative_Parameters") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
-  cudaExternalSemaphoreWaitParams wait_params = {};
-  wait_params.params.fence.value = 1;
+  cudaExternalSemaphoreSignalParams signal_params = {};
+  signal_params.params.fence.value = 1;
 
   SECTION("extSemArray == nullptr") {
-    REQUIRE(cudaWaitExternalSemaphoresAsync(nullptr, &wait_params, 1) == cudaErrorInvalidValue);
+    REQUIRE(cudaSignalExternalSemaphoresAsync(nullptr, &signal_params, 1) == cudaErrorInvalidValue);
   }
 
   SECTION("paramsArray == nullptr") {
     const auto cuda_ext_semaphore = ImportTimelineSemaphore(vkt);
-    REQUIRE(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, nullptr, 1) ==
+    REQUIRE(cudaSignalExternalSemaphoresAsync(&cuda_ext_semaphore, nullptr, 1) ==
             cudaErrorInvalidValue);
     E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
   }
 
   SECTION("Wait params flag != 0") {
     const auto cuda_ext_semaphore = ImportTimelineSemaphore(vkt);
-    wait_params.flags = 1;
-    REQUIRE(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &wait_params, 1) ==
+    signal_params.flags = 1;
+    REQUIRE(cudaSignalExternalSemaphoresAsync(&cuda_ext_semaphore, &signal_params, 1) ==
             cudaErrorInvalidValue);
     E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
   }
@@ -216,7 +193,7 @@ TEST_CASE("Unit_hipWaitExternalSemaphoresAsync_Negative_Parameters") {
     E(cudaStreamCreate(&stream));
     E(cudaStreamDestroy(stream));
     // Doesn't want to compile for some reason
-    // REQUIRE(cudaWaitExternalSemaphoresAsync(&cuda_ext_semaphore, &wait_params, 1, stream) ==
+    // REQUIRE(cudaSignalExternalSemaphoresAsync(&cuda_ext_semaphore, &signal_params, 1, stream) ==
     //         cudaErrorDeviceUninitilialized);
     E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
   }

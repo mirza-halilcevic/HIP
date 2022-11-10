@@ -319,3 +319,26 @@ VkExternalSemaphoreHandleTypeFlagBits VulkanTest::GetVKSemHandlePlatformType() c
   return VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
 #endif
 }
+
+// Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled
+void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iterations) {
+  cudaError_t query_result;
+  for (uint32_t _ = 0; _ < num_iterations; ++_) {
+    if ((query_result = cudaStreamQuery(stream)) != expected) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    } else {
+      break;
+    }
+  }
+  REQUIRE(expected == query_result);
+}
+
+cudaExternalSemaphore_t ImportTimelineSemaphore(VulkanTest& vkt) {
+  const auto semaphore = vkt.CreateExternalSemaphore(VulkanTest::SemaphoreType::Timeline);
+  const auto sem_handle_desc =
+      vkt.BuildSemaphoreDescriptor(semaphore, VulkanTest::SemaphoreType::Timeline);
+  cudaExternalSemaphore_t cuda_ext_semaphore;
+  E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &sem_handle_desc));
+
+  return cuda_ext_semaphore;
+}
