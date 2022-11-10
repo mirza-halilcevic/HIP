@@ -25,6 +25,10 @@ THE SOFTWARE.
 #include <vulkan/vulkan.h>
 #include <vector>
 
+#ifdef _WIN64
+#include <VersionHelpers.h>
+#endif
+
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 
@@ -38,13 +42,14 @@ THE SOFTWARE.
 #define VK_CHECK_RESULT(code)                                                                      \
   {                                                                                                \
     VkResult res = (code);                                                                         \
-    UNSCOPED_INFO("Vulkan error" << std::to_string(res));                                          \
+    UNSCOPED_INFO("Vulkan error: " << std::to_string(res));                                        \
     REQUIRE(VK_SUCCESS == res);                                                                    \
   }
 
 class VulkanTest {
  public:
-  VulkanTest(bool enable_validation) : _enable_validation{enable_validation} {
+  VulkanTest(bool enable_validation)
+      : _enable_validation{enable_validation}, _sem_handle_type{GetVKSemHandlePlatformType()} {
     if (_enable_validation) {
       _required_instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -79,6 +84,10 @@ class VulkanTest {
     if (_instance != VK_NULL_HANDLE) vkDestroyInstance(_instance, nullptr);
   }
 
+  VulkanTest(const VulkanTest&) = delete;
+
+  VulkanTest(VulkanTest&&) = delete;
+
   template <typename T> struct MappedBuffer {
     VkBuffer buffer = VK_NULL_HANDLE;
     T* host_ptr = nullptr;
@@ -89,12 +98,10 @@ class VulkanTest {
 
   VkFence CreateFence();
 
-  VkSemaphore CreateExternalSemaphore(VkExternalSemaphoreHandleTypeFlagBits handle_type,
-                                      bool is_timeline_semaphore, uint64_t initial_value = 0);
+  VkSemaphore CreateExternalSemaphore(bool is_timeline_semaphore, uint64_t initial_value = 0);
 
-  cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(
-      VkSemaphore vk_sem, VkExternalSemaphoreHandleTypeFlagBits handle_type,
-      bool is_timeline_semaphore);
+  cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(VkSemaphore vk_sem,
+                                                           bool is_timeline_semaphore);
 
 
   VkDevice GetDevice() const { return _device; }
@@ -123,16 +130,16 @@ class VulkanTest {
   uint32_t FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyFlags properties);
 
   cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(
-      const VkExternalSemaphoreHandleTypeFlagBits handle_type, bool is_timeline_semaphore);
+      bool is_timeline_semaphore);
 
 #ifdef _WIN64
   HANDLE
-  GetSemaphoreHandle(VkSemaphore semaphore,
-                     const VkExternalSemaphoreHandleTypeFlagBits handle_type);
+  GetSemaphoreHandle(VkSemaphore semaphore);
 #else
-  int GetSemaphoreHandle(VkSemaphore semaphore,
-                         const VkExternalSemaphoreHandleTypeFlagBits handle_type);
+  int GetSemaphoreHandle(VkSemaphore semaphore);
 #endif
+
+  VkExternalSemaphoreHandleTypeFlagBits GetVKSemHandlePlatformType() const;
 
   struct Storage {
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -141,7 +148,8 @@ class VulkanTest {
   };
 
  private:
-  bool _enable_validation = false;
+  const bool _enable_validation = false;
+  const VkExternalSemaphoreHandleTypeFlagBits _sem_handle_type;
   VkInstance _instance = VK_NULL_HANDLE;
   VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
   VkDevice _device = VK_NULL_HANDLE;

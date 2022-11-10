@@ -1,6 +1,7 @@
 set(TEST_SRC
     vulkan_test.cc
-    testing.cc)
+    hipWaitExternalSemaphoresAsync.cc
+   )
 
 hip_add_exe_to_target(NAME InteropTest
                       TEST_SRC ${TEST_SRC}
