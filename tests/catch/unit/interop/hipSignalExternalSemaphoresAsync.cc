@@ -27,10 +27,8 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Binary_Semaphor
   VulkanTest vkt(enable_validation);
 
   constexpr uint32_t count = 1;
-  const auto [m1, src_buffer, src_host] =
-      vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-  const auto [m2, dst_buffer, dst_host] =
-      vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  const auto src_storage = vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+  const auto dst_storage = vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
   const auto command_buffer = vkt.GetCommandBuffer();
   VkCommandBufferBeginInfo begin_info = {};
@@ -38,8 +36,8 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Binary_Semaphor
   begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   VK_CHECK_RESULT(vkBeginCommandBuffer(command_buffer, &begin_info));
   VkBufferCopy buffer_copy = {};
-  buffer_copy.size = count * sizeof(*src_host);
-  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &buffer_copy);
+  buffer_copy.size = count * sizeof(*src_storage.host_ptr);
+  vkCmdCopyBuffer(command_buffer, src_storage.buffer, dst_storage.buffer, 1, &buffer_copy);
   VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer));
 
   const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_BINARY);
@@ -98,10 +96,8 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Multiple_Semaph
   VulkanTest vkt(enable_validation);
 
   constexpr uint32_t count = 1;
-  const auto [m1, src_buffer, src_host] =
-      vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-  const auto [m2, dst_buffer, dst_host] =
-      vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  const auto src_storage = vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+  const auto dst_storage = vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
   const auto command_buffer = vkt.GetCommandBuffer();
   VkCommandBufferBeginInfo begin_info = {};
@@ -109,8 +105,8 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Multiple_Semaph
   begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   VK_CHECK_RESULT(vkBeginCommandBuffer(command_buffer, &begin_info));
   VkBufferCopy buffer_copy = {};
-  buffer_copy.size = count * sizeof(*src_host);
-  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &buffer_copy);
+  buffer_copy.size = count * sizeof(*src_storage.host_ptr);
+  vkCmdCopyBuffer(command_buffer, src_storage.buffer, dst_storage.buffer, 1, &buffer_copy);
   VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer));
 
   const auto binary_semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_BINARY);

@@ -93,6 +93,7 @@ class VulkanTest {
   template <typename T> struct MappedBuffer {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkBuffer buffer = VK_NULL_HANDLE;
+    uint32_t size = 0; 
     T* host_ptr = nullptr;
   };
 
@@ -194,11 +195,11 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
                                                             VkBufferUsageFlagBits transfer_flags,
                                                             bool external) {
   Storage storage;
-  storage.size = count * sizeof(T);
+  const auto size = count * sizeof(T);
 
   VkBufferCreateInfo buffer_create_info = {};
   buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buffer_create_info.size = storage.size;
+  buffer_create_info.size = size;
   buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transfer_flags;
   buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -212,7 +213,7 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
 
   VkMemoryRequirements memory_requirements;
   vkGetBufferMemoryRequirements(_device, storage.buffer, &memory_requirements);
-
+  storage.size = memory_requirements.size; 
 
   VkMemoryAllocateInfo allocate_info = {};
   allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -255,7 +256,7 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
                               reinterpret_cast<void**>(&host_ptr)));
 
   _stores.push_back(storage);
-  return MappedBuffer<T>{storage.memory, storage.buffer, host_ptr};
+  return MappedBuffer<T>{storage.memory, storage.buffer, storage.size, host_ptr};
 }
 
 // Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled

@@ -25,9 +25,8 @@ constexpr bool enable_validation = false;
 
 TEST_CASE("Unit_hipImportExternalMemory_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
-  const auto [vk_memory, b, p] =
-      vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
-  auto desc = vkt.BuildMemoryDescriptor(vk_memory, sizeof(*p));
+  const auto storage = vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+  auto desc = vkt.BuildMemoryDescriptor(storage.memory, sizeof(*storage.host_ptr));
   cudaExternalMemory_t ext_memory;
 
   SECTION("extMem_out == nullptr") {

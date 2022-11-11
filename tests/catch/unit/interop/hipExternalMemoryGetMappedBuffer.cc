@@ -23,31 +23,35 @@ THE SOFTWARE.
 
 constexpr bool enable_validation = true;
 
-template<typename T>
-__global__ void Set(T* ptr, const T val) {
-  *ptr = val;
-}
+template <typename T> __global__ void Set(T* ptr, const T val) { ptr[threadIdx.x] = val; }
 
 TEST_CASE("Blahem") {
   VulkanTest vkt(enable_validation);
-  const auto [m, b, p] = vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+  using type = uint8_t;
 
-  const auto desc = vkt.BuildMemoryDescriptor(m, sizeof(*p));
+  constexpr uint32_t count = 3;
+
+  const auto vk_storage =
+      vkt.CreateMappedStorage<type>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+
+  const auto desc = vkt.BuildMemoryDescriptor(vk_storage.memory, vk_storage.size);
 
   cudaExternalMemory_t ext_memory;
   E(cudaImportExternalMemory(&ext_memory, &desc));
 
-
   cudaExternalMemoryBufferDesc external_mem_buffer_desc = {};
-  external_mem_buffer_desc.size = sizeof(*p);
+  external_mem_buffer_desc.size = vk_storage.size;
 
-  int* bla = nullptr;
-  E(cudaExternalMemoryGetMappedBuffer(reinterpret_cast<void**>(&bla), ext_memory,
+  type* dev_ptr = nullptr;
+  E(cudaExternalMemoryGetMappedBuffer(reinterpret_cast<void**>(&dev_ptr), ext_memory,
                                       &external_mem_buffer_desc));
 
-  Set<<<1, 1>>>(bla, 42);
-  cudaDeviceSynchronize(); 
-  REQUIRE(*p == 42);
-  E(cudaFree(bla));
+  Set<<<1, count>>>(dev_ptr, static_cast<type>(42));
+  cudaDeviceSynchronize();
+  REQUIRE(vk_storage.host_ptr[1] == static_cast<type>(42));
+  E(cudaFree(dev_ptr));
+  for(int i = 0; i < count; ++i) {
+    std::cout << static_cast<int>(vk_storage.host_ptr[i]) << std::endl; 
+  }
   E(cudaDestroyExternalMemory(ext_memory));
 }
