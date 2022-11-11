@@ -4,7 +4,9 @@ set(TEST_SRC
     hipDestroyExternalSemaphore.cc
     hipWaitExternalSemaphoresAsync.cc
     hipSignalExternalSemaphoresAsync.cc
+    hipImportExternalMemory.cc
     hipExternalMemoryGetMappedBuffer.cc
+    hipDestroyExternalMemory.cc
    )
 
 hip_add_exe_to_target(NAME InteropTest

@@ -75,7 +75,8 @@ cudaExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore
   return sem_handle_desc;
 }
 
-cudaExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk_mem) {
+cudaExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk_mem,
+                                                               uint32_t size) {
   cudaExternalMemoryHandleDesc mem_handle_desc = {};
   mem_handle_desc.type = VulkanMemHandleTypeToCudaHandleType();
 #ifdef _WIN64
@@ -83,6 +84,7 @@ cudaExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk
 #else
   mem_handle_desc.handle.fd = GetMemoryHandle(vk_mem);
 #endif
+  mem_handle_desc.size = size;
 
   return mem_handle_desc;
 }

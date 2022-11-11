@@ -27,9 +27,9 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Binary_Semaphor
   VulkanTest vkt(enable_validation);
 
   constexpr uint32_t count = 1;
-  const auto [src_buffer, src_host] =
+  const auto [m1, src_buffer, src_host] =
       vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-  const auto [dst_buffer, dst_host] =
+  const auto [m2, dst_buffer, dst_host] =
       vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
   const auto command_buffer = vkt.GetCommandBuffer();
@@ -98,9 +98,9 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Multiple_Semaph
   VulkanTest vkt(enable_validation);
 
   constexpr uint32_t count = 1;
-  const auto [src_buffer, src_host] =
+  const auto [m1, src_buffer, src_host] =
       vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-  const auto [dst_buffer, dst_host] =
+  const auto [m2, dst_buffer, dst_host] =
       vkt.CreateMappedStorage<int>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
   const auto command_buffer = vkt.GetCommandBuffer();

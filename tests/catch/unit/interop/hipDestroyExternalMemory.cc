@@ -21,33 +21,23 @@ THE SOFTWARE.
 
 #include "vulkan_test.hh"
 
-constexpr bool enable_validation = true;
+constexpr bool enable_validation = false;
 
-template<typename T>
-__global__ void Set(T* ptr, const T val) {
-  *ptr = val;
-}
+TEST_CASE("Unit_hipDestroyExternalMemory_Vulkan_Negative_Parameters") {
+  SECTION("extMem == nullptr") {
+    REQUIRE(cudaDestroyExternalMemory(nullptr) == cudaErrorInvalidValue);
+  }
 
-TEST_CASE("Blahem") {
-  VulkanTest vkt(enable_validation);
-  const auto [m, b, p] = vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+  // Segfaults in cuda
+  //   SECTION("Double free") {
+  //     VulkanTest vkt(enable_validation);
+  //     const auto [vk_memory, b, p] =
+  //         vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+  //     auto desc = vkt.BuildMemoryDescriptor(vk_memory, sizeof(*p));
+  //     cudaExternalMemory_t ext_memory;
+  //     E(cudaImportExternalMemory(&ext_memory, &desc));
 
-  const auto desc = vkt.BuildMemoryDescriptor(m, sizeof(*p));
-
-  cudaExternalMemory_t ext_memory;
-  E(cudaImportExternalMemory(&ext_memory, &desc));
-
-
-  cudaExternalMemoryBufferDesc external_mem_buffer_desc = {};
-  external_mem_buffer_desc.size = sizeof(*p);
-
-  int* bla = nullptr;
-  E(cudaExternalMemoryGetMappedBuffer(reinterpret_cast<void**>(&bla), ext_memory,
-                                      &external_mem_buffer_desc));
-
-  Set<<<1, 1>>>(bla, 42);
-  cudaDeviceSynchronize(); 
-  REQUIRE(*p == 42);
-  E(cudaFree(bla));
-  E(cudaDestroyExternalMemory(ext_memory));
+  //     E(cudaDestroyExternalMemory(ext_memory));
+  //     REQUIRE(cudaDestroyExternalMemory(ext_memory) == cudaErrorInvalidValue);
+  //   }
 }

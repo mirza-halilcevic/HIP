@@ -91,12 +91,14 @@ class VulkanTest {
   VulkanTest(VulkanTest&&) = delete;
 
   template <typename T> struct MappedBuffer {
+    VkDeviceMemory memory = VK_NULL_HANDLE;
     VkBuffer buffer = VK_NULL_HANDLE;
     T* host_ptr = nullptr;
   };
 
   template <typename T>
-  MappedBuffer<T> CreateMappedStorage(uint32_t count, VkBufferUsageFlagBits transfer_flags);
+  MappedBuffer<T> CreateMappedStorage(uint32_t count, VkBufferUsageFlagBits transfer_flags,
+                                      bool external = false);
 
   VkFence CreateFence();
 
@@ -105,7 +107,7 @@ class VulkanTest {
   cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(VkSemaphore vk_sem,
                                                            VkSemaphoreType sem_type);
 
-  cudaExternalMemoryHandleDesc BuildMemoryDescriptor(VkDeviceMemory vk_mem);
+  cudaExternalMemoryHandleDesc BuildMemoryDescriptor(VkDeviceMemory vk_mem, uint32_t size);
 
 
   VkDevice GetDevice() const { return _device; }
@@ -189,19 +191,28 @@ class VulkanTest {
 
 template <typename T>
 VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
-                                                            VkBufferUsageFlagBits transfer_flags) {
+                                                            VkBufferUsageFlagBits transfer_flags,
+                                                            bool external) {
   Storage storage;
   storage.size = count * sizeof(T);
 
   VkBufferCreateInfo buffer_create_info = {};
   buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buffer_create_info.size = sizeof(int);
+  buffer_create_info.size = storage.size;
   buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | transfer_flags;
   buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  VkExternalMemoryBufferCreateInfo external_memory_buffer_info = {};
+  if (external) {
+    external_memory_buffer_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+    external_memory_buffer_info.handleTypes = _mem_handle_type;
+    buffer_create_info.pNext = &external_memory_buffer_info;
+  }
   VK_CHECK_RESULT(vkCreateBuffer(_device, &buffer_create_info, nullptr, &storage.buffer));
 
   VkMemoryRequirements memory_requirements;
   vkGetBufferMemoryRequirements(_device, storage.buffer, &memory_requirements);
+
 
   VkMemoryAllocateInfo allocate_info = {};
   allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -211,6 +222,31 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
   REQUIRE(allocate_info.memoryTypeIndex != VK_MAX_MEMORY_TYPES);
 
+  VkExportMemoryAllocateInfoKHR vulkan_export_memory_allocate_info = {};
+  if (external) {
+    vulkan_export_memory_allocate_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR;
+    vulkan_export_memory_allocate_info.handleTypes = _mem_handle_type;
+
+#ifdef _WIN64
+    WindowsSecurityAttributes winSecurityAttributes;
+
+    VkExportMemoryWin32HandleInfoKHR vulkanExportMemoryWin32HandleInfoKHR = {};
+    vulkanExportMemoryWin32HandleInfoKHR.sType =
+        VK_STRUCTURE_TYPE_EXPORT_MEMORY_WIN32_HANDLE_INFO_KHR;
+    vulkanExportMemoryWin32HandleInfoKHR.pNext = NULL;
+    vulkanExportMemoryWin32HandleInfoKHR.pAttributes = &winSecurityAttributes;
+    vulkanExportMemoryWin32HandleInfoKHR.dwAccess =
+        DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE;
+    vulkanExportMemoryWin32HandleInfoKHR.name = (LPCWSTR)NULL;
+
+    vulkan_export_memory_allocate_info.pNext =
+        _mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT_KHR
+        ? &vulkanExportMemoryWin32HandleInfoKHR
+        : NULL;
+#endif
+    allocate_info.pNext = &vulkan_export_memory_allocate_info;
+  }
+
   VK_CHECK_RESULT(vkAllocateMemory(_device, &allocate_info, nullptr, &storage.memory));
   VK_CHECK_RESULT(vkBindBufferMemory(_device, storage.buffer, storage.memory, 0));
 
@@ -219,7 +255,7 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
                               reinterpret_cast<void**>(&host_ptr)));
 
   _stores.push_back(storage);
-  return MappedBuffer<T>{storage.buffer, host_ptr};
+  return MappedBuffer<T>{storage.memory, storage.buffer, host_ptr};
 }
 
 // Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled

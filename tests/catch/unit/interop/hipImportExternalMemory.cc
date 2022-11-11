@@ -23,33 +23,39 @@ THE SOFTWARE.
 
 constexpr bool enable_validation = false;
 
-TEST_CASE("Unit_hipImportExternalSemaphore_Vulkan_Negative_Parameters") {
+TEST_CASE("Unit_hipImportExternalMemory_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
-  const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
-  auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_TIMELINE);
-  cudaExternalSemaphore_t ext_semaphore;
+  const auto [vk_memory, b, p] =
+      vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+  auto desc = vkt.BuildMemoryDescriptor(vk_memory, sizeof(*p));
+  cudaExternalMemory_t ext_memory;
 
-  SECTION("extSem_out == nullptr") {
-    REQUIRE(cudaImportExternalSemaphore(nullptr, &handle_desc) == cudaErrorInvalidValue);
+  SECTION("extMem_out == nullptr") {
+    REQUIRE(cudaImportExternalMemory(nullptr, &desc) == cudaErrorInvalidValue);
   }
 
-  SECTION("semHandleDesc == nullptr") {
-    REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, nullptr) == cudaErrorInvalidValue);
+  SECTION("memHandleDesc == nullptr") {
+    REQUIRE(cudaImportExternalMemory(&ext_memory, nullptr) == cudaErrorInvalidValue);
   }
 
-  SECTION("semHandleDesc.flags != 0") {
-    handle_desc.flags = 1;
-    REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
+  SECTION("memHandleDesc.size == 0") {
+    desc.size = 0;
+    REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
   }
 
-  SECTION("Invalid semHandleDesc.type") {
-    handle_desc.type = static_cast<cudaExternalSemaphoreHandleType>(-1);
-    REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
+  SECTION("Invalid memHandleDesc.flags") {
+    desc.flags = cudaExternalMemoryDedicated + 1;
+    REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
+  }
+
+  SECTION("Invalid memHandleDesc.type") {
+    desc.type = static_cast<cudaExternalMemoryHandleType>(-1);
+    REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
   }
 
   // TODO Uncomment and disable this for Linux in the JSON file
-  // SECTION("semHandleDesc.handle == NULL") {
-  //   handle_desc.handle.win32.handle = NULL;
-  //   REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
-  // }
+  //   SECTION("memHandleDesc.handle == NULL") {
+  //     desc.handle.win32.handle = NULL;
+  //     REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
+  //   }
 }
