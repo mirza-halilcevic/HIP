@@ -93,18 +93,15 @@ class VulkanTest {
     T* host_ptr = nullptr;
   };
 
-  enum class SemaphoreType { Timeline, Binary };
-
-
   template <typename T>
   MappedBuffer<T> CreateMappedStorage(uint32_t count, VkBufferUsageFlagBits transfer_flags);
 
   VkFence CreateFence();
 
-  VkSemaphore CreateExternalSemaphore(SemaphoreType sem_type, uint64_t initial_value = 0);
+  VkSemaphore CreateExternalSemaphore(VkSemaphoreType sem_type, uint64_t initial_value = 0);
 
   cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(VkSemaphore vk_sem,
-                                                           SemaphoreType sem_type);
+                                                           VkSemaphoreType sem_type);
 
 
   VkDevice GetDevice() const { return _device; }
@@ -132,7 +129,7 @@ class VulkanTest {
 
   uint32_t FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyFlags properties);
 
-  cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(SemaphoreType sem_type);
+  cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(VkSemaphoreType sem_type);
 
 #ifdef _WIN64
   HANDLE

@@ -28,9 +28,8 @@ TEST_CASE("Unit_hipImportExternalSemaphore_Negative_Parameters") {
   cudaExternalSemaphore_t ext_semaphore;
 
   SECTION("extSem_out == nullptr") {
-    const auto semaphore = vkt.CreateExternalSemaphore(VulkanTest::SemaphoreType::Timeline);
-    const auto handle_desc =
-        vkt.BuildSemaphoreDescriptor(semaphore, VulkanTest::SemaphoreType::Timeline);
+    const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
+    const auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_TIMELINE);
     REQUIRE(cudaImportExternalSemaphore(nullptr, &handle_desc) == cudaErrorInvalidValue);
   }
 
@@ -40,24 +39,24 @@ TEST_CASE("Unit_hipImportExternalSemaphore_Negative_Parameters") {
 
   // TODO Uncomment and disable this for Linux in the JSON file
   //   SECTION("semHandleDesc.handle == NULL") {
-  //     const auto semaphore = vkt.CreateExternalSemaphore(VulkanTest::SemaphoreType::Timeline);
+  //     const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
   //     auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore,
-  //     VulkanTest::SemaphoreType::Timeline); handle_desc.handle.win32.handle = NULL;
+  //     VK_SEMAPHORE_TYPE_TIMELINE); handle_desc.handle.win32.handle = NULL;
   //     cudaExternalSemaphore_t ext_semaphore;
   //     REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) ==
   //     cudaErrorInvalidValue);
   //   }
 
   SECTION("semHandleDesc.flags != 0") {
-    const auto semaphore = vkt.CreateExternalSemaphore(VulkanTest::SemaphoreType::Timeline);
-    auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VulkanTest::SemaphoreType::Timeline);
+    const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
+    auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_TIMELINE);
     handle_desc.flags = 1;
     REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
   }
 
   SECTION("Invalid semHandleDesc.type") {
-    const auto semaphore = vkt.CreateExternalSemaphore(VulkanTest::SemaphoreType::Timeline);
-    auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VulkanTest::SemaphoreType::Timeline);
+    const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
+    auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_TIMELINE);
     handle_desc.type = static_cast<cudaExternalSemaphoreHandleType>(-1);
     REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
   }
