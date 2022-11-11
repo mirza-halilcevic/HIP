@@ -24,7 +24,7 @@ THE SOFTWARE.
 
 constexpr bool enable_validation = false;
 
-TEST_CASE("Unit_hipDestroyExternalSemaphore_Negative_Parameters") {
+TEST_CASE("Unit_hipDestroyExternalSemaphore_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
 
   SECTION("extSem == nullptr") {

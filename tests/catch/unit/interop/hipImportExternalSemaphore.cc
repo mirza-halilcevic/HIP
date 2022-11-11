@@ -23,7 +23,7 @@ THE SOFTWARE.
 
 constexpr bool enable_validation = false;
 
-TEST_CASE("Unit_hipImportExternalSemaphore_Negative_Parameters") {
+TEST_CASE("Unit_hipImportExternalSemaphore_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
   cudaExternalSemaphore_t ext_semaphore;
 

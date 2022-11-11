@@ -23,7 +23,7 @@ THE SOFTWARE.
 
 constexpr bool enable_validation = false;
 
-TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Binary_Semaphore") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Binary_Semaphore") {
   VulkanTest vkt(enable_validation);
 
   constexpr uint32_t count = 1;
@@ -47,7 +47,6 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Binary_Semaphore") {
       vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_BINARY);
   cudaExternalSemaphore_t cuda_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &cuda_sem_handle_desc));
-  const auto fence = vkt.CreateFence();
 
   VkSubmitInfo submit_info = {};
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -55,6 +54,7 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Binary_Semaphore") {
   submit_info.pCommandBuffers = &command_buffer;
   submit_info.waitSemaphoreCount = 1;
   submit_info.pWaitSemaphores = &semaphore;
+  const auto fence = vkt.CreateFence();
   VK_CHECK_RESULT(vkQueueSubmit(vkt.GetQueue(), 1, &submit_info, fence));
 
   REQUIRE(vkGetFenceStatus(vkt.GetDevice(), fence) == VK_NOT_READY);
@@ -70,7 +70,7 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Binary_Semaphore") {
   E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
 }
 
-TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Timeline_Semaphore") {
   VulkanTest vkt(enable_validation);
   constexpr uint64_t signal_value = 2;
 
@@ -89,12 +89,12 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Timeline_Semaphore") {
   uint64_t sem_value = 0u;
   VK_CHECK_RESULT(vkGetSemaphoreCounterValue(vkt.GetDevice(), semaphore, &sem_value));
 
-  REQUIRE(2 == signal_value);
+  REQUIRE(2 == sem_value);
 
   E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
 }
 
-TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Multiple_Semaphores") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Positive_Multiple_Semaphores") {
   VulkanTest vkt(enable_validation);
 
   constexpr uint32_t count = 1;
@@ -161,7 +161,7 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Positive_Multiple_Semaphores") 
   E(cudaDestroyExternalSemaphore(cuda_timeline_ext_semaphore));
 }
 
-TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Negative_Parameters") {
+TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
   cudaExternalSemaphoreSignalParams signal_params = {};
   signal_params.params.fence.value = 1;
@@ -177,7 +177,7 @@ TEST_CASE("Unit_hipSignalExternalSemaphoresAsync_Negative_Parameters") {
     E(cudaDestroyExternalSemaphore(cuda_ext_semaphore));
   }
 
-  SECTION("Wait params flag != 0") {
+  SECTION("Wait params flags  != 0") {
     const auto cuda_ext_semaphore = ImportTimelineSemaphore(vkt);
     signal_params.flags = 1;
     REQUIRE(cudaSignalExternalSemaphoresAsync(&cuda_ext_semaphore, &signal_params, 1) ==
