@@ -21,19 +21,8 @@ THE SOFTWARE.
 
 #include "vulkan_test.hh"
 
-constexpr bool enable_validation = false;
+constexpr bool enable_validation = true;
 
-TEST_CASE("Unit_hipDestroyExternalSemaphore_Vulkan_Negative_Parameters") {
-  VulkanTest vkt(enable_validation);
-
-  SECTION("extSem == nullptr") {
-    REQUIRE(cudaDestroyExternalSemaphore(nullptr) == cudaErrorInvalidValue);
-  }
-
-  // Segfaults in CUDA
-  // SECTION("Double free") {
-  //     const auto ext_semaphore = ImportTimelineSemaphore(vkt);
-  //     E(cudaDestroyExternalSemaphore(ext_semaphore));
-  //     REQUIRE(cudaDestroyExternalSemaphore(ext_semaphore) == cudaErrorInvalidValue);
-  // }
+TEST_CASE("Blahem") {
+    VulkanTest vkt(enable_validation);
 }

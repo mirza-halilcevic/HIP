@@ -49,7 +49,9 @@ THE SOFTWARE.
 class VulkanTest {
  public:
   VulkanTest(bool enable_validation)
-      : _enable_validation{enable_validation}, _sem_handle_type{GetVKSemHandlePlatformType()} {
+      : _enable_validation{enable_validation},
+        _sem_handle_type{GetVkSemHandlePlatformType()},
+        _mem_handle_type{GetVkMemHandlePlatformType()} {
     if (_enable_validation) {
       _required_instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -103,6 +105,8 @@ class VulkanTest {
   cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(VkSemaphore vk_sem,
                                                            VkSemaphoreType sem_type);
 
+  cudaExternalMemoryHandleDesc BuildMemoryDescriptor(VkDeviceMemory vk_mem);
+
 
   VkDevice GetDevice() const { return _device; }
 
@@ -129,7 +133,9 @@ class VulkanTest {
 
   uint32_t FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyFlags properties);
 
-  cudaExternalSemaphoreHandleType VulkanHandleTypeToCudaHandleType(VkSemaphoreType sem_type);
+  cudaExternalSemaphoreHandleType VulkanSemHandleTypeToCudaHandleType(VkSemaphoreType sem_type);
+
+  cudaExternalMemoryHandleType VulkanMemHandleTypeToCudaHandleType();
 
 #ifdef _WIN64
   HANDLE
@@ -138,7 +144,16 @@ class VulkanTest {
   int GetSemaphoreHandle(VkSemaphore semaphore);
 #endif
 
-  VkExternalSemaphoreHandleTypeFlagBits GetVKSemHandlePlatformType() const;
+#ifdef _WIN64
+  HANDLE
+  GetMemoryHandle(VkDeviceMemory memory);
+#else
+  int GetMemoryHandle(VkDeviceMemory memory);
+#endif
+
+  VkExternalSemaphoreHandleTypeFlagBits GetVkSemHandlePlatformType() const;
+
+  VkExternalMemoryHandleTypeFlagBits GetVkMemHandlePlatformType() const;
 
   struct Storage {
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -149,6 +164,7 @@ class VulkanTest {
  private:
   const bool _enable_validation = false;
   const VkExternalSemaphoreHandleTypeFlagBits _sem_handle_type;
+  const VkExternalMemoryHandleTypeFlagBits _mem_handle_type;
   VkInstance _instance = VK_NULL_HANDLE;
   VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
   VkDevice _device = VK_NULL_HANDLE;
@@ -164,9 +180,11 @@ class VulkanTest {
 
   std::vector<const char*> _required_instance_extensions{
       VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-      VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME};
-  std::vector<const char*> _required_device_extensions{VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
-                                                       VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
+      VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+      VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME};
+  std::vector<const char*> _required_device_extensions{
+      VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
+      VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};
 };
 
 template <typename T>
@@ -207,4 +225,4 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
 // Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled
 void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iterations = 5);
 
-cudaExternalSemaphore_t ImportTimelineSemaphore(VulkanTest& vkt); 
+cudaExternalSemaphore_t ImportTimelineSemaphore(VulkanTest& vkt);

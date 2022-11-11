@@ -64,7 +64,7 @@ VkSemaphore VulkanTest::CreateExternalSemaphore(VkSemaphoreType sem_type, uint64
 cudaExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore vk_sem,
                                                                      VkSemaphoreType sem_type) {
   cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
-  sem_handle_desc.type = VulkanHandleTypeToCudaHandleType(sem_type);
+  sem_handle_desc.type = VulkanSemHandleTypeToCudaHandleType(sem_type);
 #ifdef _WIN64
   sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem);
 #else
@@ -73,6 +73,18 @@ cudaExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore
   sem_handle_desc.flags = 0;
 
   return sem_handle_desc;
+}
+
+cudaExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk_mem) {
+  cudaExternalMemoryHandleDesc mem_handle_desc = {};
+  mem_handle_desc.type = VulkanMemHandleTypeToCudaHandleType();
+#ifdef _WIN64
+  mem_handle_desc.handle.win32.handle = GetMemoryHandle(ck_mem);
+#else
+  mem_handle_desc.handle.fd = GetMemoryHandle(vk_mem);
+#endif
+
+  return mem_handle_desc;
 }
 
 void VulkanTest::CreateInstance() {
@@ -245,7 +257,7 @@ uint32_t VulkanTest::FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyF
   return VK_MAX_MEMORY_TYPES;
 }
 
-cudaExternalSemaphoreHandleType VulkanTest::VulkanHandleTypeToCudaHandleType(
+cudaExternalSemaphoreHandleType VulkanTest::VulkanSemHandleTypeToCudaHandleType(
     VkSemaphoreType sem_type) {
   if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
     return sem_type == VK_SEMAPHORE_TYPE_TIMELINE
@@ -262,6 +274,18 @@ cudaExternalSemaphoreHandleType VulkanTest::VulkanHandleTypeToCudaHandleType(
   }
 
   throw std::invalid_argument("Invalid vulkan semaphore handle type");
+}
+
+cudaExternalMemoryHandleType VulkanTest::VulkanMemHandleTypeToCudaHandleType() {
+  if (_mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
+    return cudaExternalMemoryHandleTypeOpaqueWin32;
+  } else if (_mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
+    return cudaExternalMemoryHandleTypeOpaqueWin32Kmt;
+  } else if (_mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT) {
+    return cudaExternalMemoryHandleTypeOpaqueFd;
+  }
+
+  throw std::invalid_argument("Invalid vulkan memory handle type");
 }
 
 #ifdef _WIN64
@@ -312,12 +336,65 @@ int VulkanTest::GetSemaphoreHandle(VkSemaphore semaphore) {
 }
 #endif
 
-VkExternalSemaphoreHandleTypeFlagBits VulkanTest::GetVKSemHandlePlatformType() const {
+#ifdef _WIN64
+HANDLE
+VulkanTest::GetMemoryHandle(VkDeviceMemory memory) {
+  Handle handle = 0;
+
+  VkMemoryGetWin32HandleInfoKHR vkMemoryGetWin32HandleInfoKHR = {};
+  vkMemoryGetWin32HandleInfoKHR.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+  vkMemoryGetWin32HandleInfoKHR.memory = memory;
+  vkMemoryGetWin32HandleInfoKHR.handleType = _mem_handle_type;
+
+  PFN_vkGetMemoryWin32HandleKHR fpGetMemoryWin32HandleKHR =
+      (PFN_vkGetMemoryWin32HandleKHR)vkGetDeviceProcAddr(m_device, "vkGetMemoryWin32HandleKHR");
+
+  if (!fpGetMemoryWin32HandleKHR) {
+    throw std::runtime_error("Failed to retrieve vkGetMemoryWin32HandleKHR");
+  }
+  if (fpGetMemoryWin32HandleKHR(_device, &vkMemoryGetWin32HandleInfoKHR, &handle) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to retrieve memory handle");
+  }
+
+  return handle;
+}
+#else
+int VulkanTest::GetMemoryHandle(VkDeviceMemory memory) {
+  int fd;
+
+  VkMemoryGetFdInfoKHR memoryGetFdInfoKHR = {};
+  memoryGetFdInfoKHR.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+  memoryGetFdInfoKHR.memory = memory;
+  memoryGetFdInfoKHR.handleType = _mem_handle_type;
+
+  PFN_vkGetMemoryFdKHR fpGetMemoryFdKHR =
+      (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(_device, "vkGetMemoryFdKHR");
+  if (!fpGetMemoryFdKHR) {
+    throw std::runtime_error("Failed to retrieve vkGetMemoryFdKHR");
+  }
+  if (fpGetMemoryFdKHR(_device, &memoryGetFdInfoKHR, &fd) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to retrieve memory handle");
+  }
+
+  return fd;
+}
+#endif
+
+VkExternalSemaphoreHandleTypeFlagBits VulkanTest::GetVkSemHandlePlatformType() const {
 #ifdef _WIN64
   return IsWindows8OrGreater() ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
                                : VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT;
 #else
   return VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
+}
+
+VkExternalMemoryHandleTypeFlagBits VulkanTest::GetVkMemHandlePlatformType() const {
+#ifdef _WIN64
+  return IsWindows8OrGreater() ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT
+                               : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT;
+#else
+  return VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
 #endif
 }
 
