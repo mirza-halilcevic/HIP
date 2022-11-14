@@ -25,33 +25,73 @@ constexpr bool enable_validation = true;
 
 template <typename T> __global__ void Set(T* ptr, const T val) { ptr[threadIdx.x] = val; }
 
-TEST_CASE("Blahem") {
+TEST_CASE("Unit_hipExternalMemoryGetMappedBuffer_Vulkan_Positive_Read_Write") {
   VulkanTest vkt(enable_validation);
   using type = uint8_t;
-
   constexpr uint32_t count = 3;
 
   const auto vk_storage =
       vkt.CreateMappedStorage<type>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
 
-  const auto desc = vkt.BuildMemoryDescriptor(vk_storage.memory, vk_storage.size);
-
-  cudaExternalMemory_t ext_memory;
-  E(cudaImportExternalMemory(&ext_memory, &desc));
+  const auto hip_ext_mem_desc = vkt.BuildMemoryDescriptor(vk_storage.memory, vk_storage.size);
+  cudaExternalMemory_t hip_ext_memory;
+  E(cudaImportExternalMemory(&hip_ext_memory, &hip_ext_mem_desc));
 
   cudaExternalMemoryBufferDesc external_mem_buffer_desc = {};
   external_mem_buffer_desc.size = vk_storage.size;
 
-  type* dev_ptr = nullptr;
-  E(cudaExternalMemoryGetMappedBuffer(reinterpret_cast<void**>(&dev_ptr), ext_memory,
+  type* hip_dev_ptr = nullptr;
+  E(cudaExternalMemoryGetMappedBuffer(reinterpret_cast<void**>(&hip_dev_ptr), hip_ext_memory,
+                                      &external_mem_buffer_desc));
+  REQUIRE(nullptr != hip_dev_ptr);
+
+  vk_storage.host_ptr[0] = 41;
+  vk_storage.host_ptr[1] = 40;
+  vk_storage.host_ptr[2] = 43;
+
+  std::vector<type> read_buffer(count, 0);
+  E(cudaMemcpy(read_buffer.data(), hip_dev_ptr, count * sizeof(type), cudaMemcpyDeviceToHost));
+  REQUIRE(41 == read_buffer[0]);
+  REQUIRE(40 == read_buffer[1]);
+  REQUIRE(43 == read_buffer[2]);
+
+  Set<<<1, 1>>>(hip_dev_ptr + 1, static_cast<type>(42));
+  E(cudaDeviceSynchronize());
+  REQUIRE(41 == vk_storage.host_ptr[0]);
+  REQUIRE(42 == vk_storage.host_ptr[1]);
+  REQUIRE(43 == vk_storage.host_ptr[2]);
+
+  E(cudaFree(hip_dev_ptr));
+  E(cudaDestroyExternalMemory(hip_ext_memory));
+}
+
+TEST_CASE("Unit_hipExternalMemoryGetMappedBuffer_Vulkan_Positive_Offset") {
+  VulkanTest vkt(enable_validation);
+  using type = uint8_t;
+  constexpr uint32_t count = 2;
+
+  const auto vk_storage =
+      vkt.CreateMappedStorage<type>(count, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+
+  const auto hip_ext_mem_desc = vkt.BuildMemoryDescriptor(vk_storage.memory, vk_storage.size);
+  cudaExternalMemory_t hip_ext_memory;
+  E(cudaImportExternalMemory(&hip_ext_memory, &hip_ext_mem_desc));
+
+  cudaExternalMemoryBufferDesc external_mem_buffer_desc = {};
+  constexpr auto offset = (count - 1) * sizeof(type);
+  external_mem_buffer_desc.size = vk_storage.size - offset;
+  external_mem_buffer_desc.offset = offset;
+
+  type* hip_dev_ptr = nullptr;
+  E(cudaExternalMemoryGetMappedBuffer(reinterpret_cast<void**>(&hip_dev_ptr), hip_ext_memory,
                                       &external_mem_buffer_desc));
 
-  Set<<<1, count>>>(dev_ptr, static_cast<type>(42));
-  cudaDeviceSynchronize();
-  REQUIRE(vk_storage.host_ptr[1] == static_cast<type>(42));
-  E(cudaFree(dev_ptr));
-  for(int i = 0; i < count; ++i) {
-    std::cout << static_cast<int>(vk_storage.host_ptr[i]) << std::endl; 
-  }
-  E(cudaDestroyExternalMemory(ext_memory));
+  vk_storage.host_ptr[0] = 41;
+  vk_storage.host_ptr[1] = 42;
+  type read_val = 0;
+  E(cudaMemcpy(&read_val, hip_dev_ptr, 1, cudaMemcpyDeviceToHost));
+  REQUIRE(42 == read_val);
+
+  E(cudaFree(hip_dev_ptr));
+  E(cudaDestroyExternalMemory(hip_ext_memory));
 }
