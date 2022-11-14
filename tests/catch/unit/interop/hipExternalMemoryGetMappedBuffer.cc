@@ -21,7 +21,7 @@ THE SOFTWARE.
 
 #include "vulkan_test.hh"
 
-constexpr bool enable_validation = true;
+constexpr bool enable_validation = false;
 
 template <typename T> __global__ void Set(T* ptr, const T val) { ptr[threadIdx.x] = val; }
 
@@ -94,4 +94,47 @@ TEST_CASE("Unit_hipExternalMemoryGetMappedBuffer_Vulkan_Positive_Offset") {
 
   E(cudaFree(hip_dev_ptr));
   E(cudaDestroyExternalMemory(hip_ext_memory));
+}
+
+TEST_CASE("Unit_hipExternalMemoryGetMappedBuffer_Vulkan_Negative_Parameters") {
+  VulkanTest vkt(enable_validation);
+  const auto vk_storage = vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+
+  const auto hip_ext_mem_desc = vkt.BuildMemoryDescriptor(vk_storage.memory, vk_storage.size);
+  cudaExternalMemory_t hip_ext_memory;
+  E(cudaImportExternalMemory(&hip_ext_memory, &hip_ext_mem_desc));
+
+  cudaExternalMemoryBufferDesc external_mem_buffer_desc = {};
+  external_mem_buffer_desc.size = vk_storage.size;
+  void* hip_dev_ptr = nullptr;
+
+  SECTION("devPtr == nullptr") {
+    REQUIRE(cudaExternalMemoryGetMappedBuffer(nullptr, hip_ext_memory, &external_mem_buffer_desc) ==
+            cudaErrorInvalidValue);
+  }
+
+  // Segfaults in CUDA
+  // SECTION("extMem is destroyed") {
+  //   E(cudaDestroyExternalMemory(hip_ext_memory));
+  //   REQUIRE(cudaExternalMemoryGetMappedBuffer(&hip_dev_ptr, hip_ext_memory,
+  //   &external_mem_buffer_desc) ==
+  //           cudaErrorInvalidValue);
+  // }
+
+  SECTION("bufferDesc == nullptr") {
+    REQUIRE(cudaExternalMemoryGetMappedBuffer(&hip_dev_ptr, hip_ext_memory, nullptr) ==
+            cudaErrorInvalidValue);
+  }
+
+  SECTION("bufferDesc.flags != 0") {
+    external_mem_buffer_desc.flags = 1;
+    REQUIRE(cudaExternalMemoryGetMappedBuffer(&hip_dev_ptr, hip_ext_memory,
+                                              &external_mem_buffer_desc) == cudaErrorInvalidValue);
+  }
+
+  SECTION("bufferDesc.offset + bufferDesc.size > hipExternalMemHandleDesc.size") {
+    external_mem_buffer_desc.offset = 1;
+    REQUIRE(cudaExternalMemoryGetMappedBuffer(&hip_dev_ptr, hip_ext_memory,
+                                              &external_mem_buffer_desc) == cudaErrorInvalidValue);
+  }
 }
