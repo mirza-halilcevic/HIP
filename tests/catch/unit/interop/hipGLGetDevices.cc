@@ -21,84 +21,74 @@ THE SOFTWARE.
 */
 
 #include <hip_test_common.hh>
+#include <hip/hip_runtime_api.h>
 
-#define GL_GLEXT_PROTOTYPES
-#include <GL/gl.h>
-#include <GL/glext.h>
-#include <EGL/egl.h>
+#include "interop_common.hh"
 
-#include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
+#include "GLContextScopeGuard.hh"
 
-static const EGLint configAttribs[] = {EGL_SURFACE_TYPE,
-                                       EGL_PBUFFER_BIT,
-                                       EGL_BLUE_SIZE,
-                                       8,
-                                       EGL_GREEN_SIZE,
-                                       8,
-                                       EGL_RED_SIZE,
-                                       8,
-                                       EGL_DEPTH_SIZE,
-                                       8,
-                                       EGL_RENDERABLE_TYPE,
-                                       EGL_OPENGL_BIT,
-                                       EGL_NONE};
+namespace {
+constexpr std::array<cudaGLDeviceList, 3> kDeviceLists{
+    cudaGLDeviceListAll, cudaGLDeviceListCurrentFrame, cudaGLDeviceListNextFrame};
+}  // anonymous namespace
 
-static const int pbufferWidth = 9;
-static const int pbufferHeight = 9;
+TEST_CASE("Unit_hipGLGetDevices_Positive_Basic") {
+  GLContextScopeGuard gl_context;
 
-static const EGLint pbufferAttribs[] = {
-    EGL_WIDTH, pbufferWidth, EGL_HEIGHT, pbufferHeight, EGL_NONE,
-};
+  const auto device_list = GENERATE(from_range(begin(kDeviceLists), end(kDeviceLists)));
 
-const uint width = 512, height = 512;
+  const int device_count = HipTest::getDeviceCount();
 
-GLuint pbo;                                     // OpenGL pixel buffer object
-struct cudaGraphicsResource* hip_pbo_resource;  // HIP Graphics Resource (to transfer PBO)
+  unsigned int gl_device_count = 0;
+  std::vector<int> gl_devices(device_count, -1);
 
-TEST_CASE("Blahem") {
-  // 1. Initialize EGL
-  EGLDisplay eglDpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  REQUIRE(cudaGLGetDevices(&gl_device_count, gl_devices.data(), device_count, device_list) ==
+          CUDA_SUCCESS);
 
-  EGLint major, minor;
+  REQUIRE(gl_device_count == 1);
+  REQUIRE(gl_devices.at(0) == 0);
+}
 
-  REQUIRE(eglInitialize(eglDpy, &major, &minor));
+TEST_CASE("Unit_hipGLGetDevices_Positive_Parameters") {
+  GLContextScopeGuard gl_context;
 
-  // 2. Select an appropriate configuration
-  EGLint numConfigs;
-  EGLConfig eglCfg;
+  const int device_count = HipTest::getDeviceCount();
 
-  REQUIRE(eglChooseConfig(eglDpy, configAttribs, &eglCfg, 1, &numConfigs));
+  unsigned int gl_device_count = 0;
+  std::vector<int> gl_devices(device_count, -1);
 
-  // 3. Create a surface
-  EGLSurface eglSurf = eglCreatePbufferSurface(eglDpy, eglCfg, pbufferAttribs);
+  SECTION("pHipDeviceCount == nullptr") {
+    REQUIRE(cudaGLGetDevices(nullptr, gl_devices.data(), device_count, cudaGLDeviceListAll) ==
+            CUDA_SUCCESS);
+    REQUIRE(gl_devices.at(0) == 0);
+  }
 
-  // 4. Bind the API
-  REQUIRE(eglBindAPI(EGL_OPENGL_API));
+  SECTION("pHipDevices == nullptr") {
+    REQUIRE(cudaGLGetDevices(&gl_device_count, nullptr, device_count, cudaGLDeviceListAll) ==
+            CUDA_SUCCESS);
+    REQUIRE(gl_device_count == 1);
+  }
 
-  // 5. Create a context and make it current
-  EGLContext eglCtx = eglCreateContext(eglDpy, eglCfg, EGL_NO_CONTEXT, NULL);
+  SECTION("hipDeviceCount == 0") {
+    REQUIRE(cudaGLGetDevices(&gl_device_count, gl_devices.data(), 0, cudaGLDeviceListAll) ==
+            CUDA_SUCCESS);
+    REQUIRE(gl_device_count == 1);
+    REQUIRE(gl_devices.at(0) == -1);
+  }
+}
 
-  REQUIRE(eglMakeCurrent(eglDpy, eglSurf, eglSurf, eglCtx));
+TEST_CASE("Unit_hipGLGetDevices_Negative_Parameters") {
+  GLContextScopeGuard gl_context;
 
-  // from now on use your OpenGL context
+  const int device_count = HipTest::getDeviceCount();
 
-  // create pixel buffer object
-  glGenBuffers(1, &pbo);
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, pbo);
-  glBufferData(GL_PIXEL_UNPACK_BUFFER_ARB, width * height * sizeof(GLubyte) * 4, 0,
-               GL_STREAM_DRAW_ARB);
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  unsigned int gl_device_count = 0;
+  std::vector<int> gl_devices(device_count, -1);
 
-  cudaFree(0);
-
-  // register this buffer object with CUDA
-  auto error = cudaGraphicsGLRegisterBuffer(&hip_pbo_resource, pbo, cudaGraphicsMapFlagsWriteDiscard);
-  std::cout << cudaGetErrorString(error) << std::endl;
-
-  error = cudaGraphicsUnregisterResource(hip_pbo_resource);
-  std::cout << cudaGetErrorString(error) << std::endl;
-
-  // 6. Terminate EGL when finished
-  REQUIRE(eglTerminate(eglDpy));
+  SECTION("invalid deviceList") {
+    REQUIRE(cudaGLGetDevices(&gl_device_count, gl_devices.data(), device_count,
+                             static_cast<cudaGLDeviceList>(-1)) == CUDA_ERROR_INVALID_VALUE);
+    REQUIRE(gl_device_count == 0);
+    REQUIRE(gl_devices.at(0) == -1);
+  }
 }

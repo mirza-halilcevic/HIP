@@ -1,5 +1,13 @@
 set(TEST_SRC
+    interop_common.cc
     hipGLGetDevices.cc
+    hipGraphicsGLRegisterBuffer.cc
+    hipGraphicsGLRegisterImage.cc
+    hipGraphicsMapResources.cc
+    hipGraphicsSubResourceGetMappedArray.cc
+    hipGraphicsResourceGetMappedPointer.cc
+    hipGraphicsUnmapResources.cc
+    hipGraphicsUnregisterResource.cc
 )
 
 hip_add_exe_to_target(NAME InteropTest
