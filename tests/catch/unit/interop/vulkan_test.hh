@@ -52,10 +52,6 @@ class VulkanTest {
       : _enable_validation{enable_validation},
         _sem_handle_type{GetVkSemHandlePlatformType()},
         _mem_handle_type{GetVkMemHandlePlatformType()} {
-    if (_enable_validation) {
-      _required_instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
     CreateInstance();
     CreateDevice();
     CreateCommandBuffer();
@@ -93,7 +89,7 @@ class VulkanTest {
   template <typename T> struct MappedBuffer {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkBuffer buffer = VK_NULL_HANDLE;
-    uint32_t size = 0; 
+    uint32_t size = 0;
     T* host_ptr = nullptr;
   };
 
@@ -127,8 +123,6 @@ class VulkanTest {
   bool CheckExtensionSupport(std::vector<const char*> expected_extensions);
 
   void EnableValidationLayer();
-
-  VkDebugUtilsMessengerCreateInfoEXT BuildDebugCreateInfo();
 
   uint32_t GetComputeQueueFamilyIndex();
 
@@ -213,7 +207,7 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
 
   VkMemoryRequirements memory_requirements;
   vkGetBufferMemoryRequirements(_device, storage.buffer, &memory_requirements);
-  storage.size = memory_requirements.size; 
+  storage.size = memory_requirements.size;
 
   VkMemoryAllocateInfo allocate_info = {};
   allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;

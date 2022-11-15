@@ -50,8 +50,8 @@ VkSemaphore VulkanTest::CreateExternalSemaphore(VkSemaphoreType sem_type, uint64
     export_sem_create_info.pNext = nullptr;
   }
 
-  VkSemaphoreCreateInfo semaphore_create_info;
-  semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+  VkSemaphoreCreateInfo semaphore_create_info = {};
+  semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
   semaphore_create_info.pNext = &export_sem_create_info;
 
   VkSemaphore semaphore;
@@ -92,6 +92,9 @@ cudaExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk
 void VulkanTest::CreateInstance() {
   UNSCOPED_INFO("Not all of the required instance extensions are supported");
   REQUIRE(CheckExtensionSupport(_required_instance_extensions));
+  if (_enable_validation) {
+    EnableValidationLayer();
+  }
 
   VkApplicationInfo app_info = {};
   app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -104,13 +107,6 @@ void VulkanTest::CreateInstance() {
   create_info.ppEnabledExtensionNames = _required_instance_extensions.data();
   create_info.enabledLayerCount = static_cast<uint32_t>(_enabled_layers.size());
   create_info.ppEnabledLayerNames = _enabled_layers.data();
-
-  VkDebugUtilsMessengerCreateInfoEXT debug_create_info = {};
-  if (_enable_validation) {
-    EnableValidationLayer();
-    debug_create_info = BuildDebugCreateInfo();
-    create_info.pNext = &debug_create_info;
-  }
 
   VK_CHECK_RESULT(vkCreateInstance(&create_info, nullptr, &_instance));
 }
@@ -128,6 +124,10 @@ void VulkanTest::CreateDevice() {
   float queue_priorities = 1.0;
   queue_create_info.pQueuePriorities = &queue_priorities;
 
+  VkPhysicalDeviceVulkan12Features features = {};
+  features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+  features.timelineSemaphore = true;
+
   VkDeviceCreateInfo device_create_info = {};
   device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   device_create_info.enabledLayerCount = _enabled_layers.size();
@@ -136,6 +136,7 @@ void VulkanTest::CreateDevice() {
   device_create_info.ppEnabledExtensionNames = _required_device_extensions.data();
   device_create_info.pQueueCreateInfos = &queue_create_info;
   device_create_info.queueCreateInfoCount = 1;
+  device_create_info.pNext = &features;
 
   VK_CHECK_RESULT(vkCreateDevice(_physical_device, &device_create_info, nullptr, &_device));
   vkGetDeviceQueue(_device, _compute_family_queue_idx, 0, &_queue);
@@ -195,28 +196,6 @@ void VulkanTest::EnableValidationLayer() {
     UNSCOPED_INFO("Validation was requested, but the validation layer could not be located");
     REQUIRE(found_val_layer);
   }
-}
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
-              const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void*) {
-  std::cerr << "Validation layer: " << callback_data->pMessage << std::endl;
-  return VK_FALSE;
-}
-
-VkDebugUtilsMessengerCreateInfoEXT VulkanTest::BuildDebugCreateInfo() {
-  VkDebugUtilsMessengerCreateInfoEXT debug_create_info = {};
-
-  debug_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  debug_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-      VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-      VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-  debug_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-      VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-      VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-  debug_create_info.pfnUserCallback = DebugCallback;
-
-  return debug_create_info;
 }
 
 uint32_t VulkanTest::GetComputeQueueFamilyIndex() {
