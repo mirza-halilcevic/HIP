@@ -61,10 +61,10 @@ VkSemaphore VulkanTest::CreateExternalSemaphore(VkSemaphoreType sem_type, uint64
   return semaphore;
 }
 
-cudaExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore vk_sem,
-                                                                     VkSemaphoreType sem_type) {
-  cudaExternalSemaphoreHandleDesc sem_handle_desc = {};
-  sem_handle_desc.type = VulkanSemHandleTypeToCudaHandleType(sem_type);
+hipExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore vk_sem,
+                                                                    VkSemaphoreType sem_type) {
+  hipExternalSemaphoreHandleDesc sem_handle_desc = {};
+  sem_handle_desc.type = VulkanSemHandleTypeToHIPHandleType(sem_type);
 #ifdef _WIN64
   sem_handle_desc.handle.win32.handle = GetSemaphoreHandle(vk_sem);
 #else
@@ -75,10 +75,10 @@ cudaExternalSemaphoreHandleDesc VulkanTest::BuildSemaphoreDescriptor(VkSemaphore
   return sem_handle_desc;
 }
 
-cudaExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk_mem,
-                                                               uint32_t size) {
-  cudaExternalMemoryHandleDesc mem_handle_desc = {};
-  mem_handle_desc.type = VulkanMemHandleTypeToCudaHandleType();
+hipExternalMemoryHandleDesc VulkanTest::BuildMemoryDescriptor(VkDeviceMemory vk_mem,
+                                                              uint32_t size) {
+  hipExternalMemoryHandleDesc mem_handle_desc = {};
+  mem_handle_desc.type = VulkanMemHandleTypeToHIPHandleType();
 #ifdef _WIN64
   mem_handle_desc.handle.win32.handle = GetMemoryHandle(ck_mem);
 #else
@@ -238,32 +238,40 @@ uint32_t VulkanTest::FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyF
   return VK_MAX_MEMORY_TYPES;
 }
 
-cudaExternalSemaphoreHandleType VulkanTest::VulkanSemHandleTypeToCudaHandleType(
+hipExternalSemaphoreHandleType VulkanTest::VulkanSemHandleTypeToHIPHandleType(
     VkSemaphoreType sem_type) {
-  if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
-    return sem_type == VK_SEMAPHORE_TYPE_TIMELINE
-        ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
-        : cudaExternalSemaphoreHandleTypeOpaqueWin32;
-  } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
-    return sem_type == VK_SEMAPHORE_TYPE_TIMELINE
-        ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32
-        : cudaExternalSemaphoreHandleTypeOpaqueWin32Kmt;
-  } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
-    return sem_type == VK_SEMAPHORE_TYPE_TIMELINE
-        ? cudaExternalSemaphoreHandleTypeTimelineSemaphoreFd
-        : cudaExternalSemaphoreHandleTypeOpaqueFd;
+  if (sem_type == VK_SEMAPHORE_TYPE_BINARY) {
+    if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
+      return hipExternalSemaphoreHandleTypeOpaqueWin32;
+    } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
+      return hipExternalSemaphoreHandleTypeOpaqueWin32Kmt;
+    } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
+      return hipExternalSemaphoreHandleTypeOpaqueFd;
+    }
+  } else if (sem_type == VK_SEMAPHORE_TYPE_TIMELINE) {
+#if HT_AMD
+    throw std::invalid_argument("Timeline semaphore unsupported on AMD");
+#else
+    if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
+      return hipExternalSemaphoreHandleTypeTimelineSemaphoreWin32;
+    } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
+      return hipExternalSemaphoreHandleTypeTimelineSemaphoreWin32;
+    } else if (_sem_handle_type & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
+      return hipExternalSemaphoreHandleTypeTimelineSemaphoreFd;
+    }
+#endif
   }
 
   throw std::invalid_argument("Invalid vulkan semaphore handle type");
 }
 
-cudaExternalMemoryHandleType VulkanTest::VulkanMemHandleTypeToCudaHandleType() {
+hipExternalMemoryHandleType VulkanTest::VulkanMemHandleTypeToHIPHandleType() {
   if (_mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
-    return cudaExternalMemoryHandleTypeOpaqueWin32;
+    return hipExternalMemoryHandleTypeOpaqueWin32;
   } else if (_mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT) {
-    return cudaExternalMemoryHandleTypeOpaqueWin32Kmt;
+    return hipExternalMemoryHandleTypeOpaqueWin32Kmt;
   } else if (_mem_handle_type & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT) {
-    return cudaExternalMemoryHandleTypeOpaqueFd;
+    return hipExternalMemoryHandleTypeOpaqueFd;
   }
 
   throw std::invalid_argument("Invalid vulkan memory handle type");
@@ -380,10 +388,10 @@ VkExternalMemoryHandleTypeFlagBits VulkanTest::GetVkMemHandlePlatformType() cons
 }
 
 // Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled
-void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iterations) {
-  cudaError_t query_result;
+void PollStream(hipStream_t stream, hipError_t expected, uint32_t num_iterations) {
+  hipError_t query_result;
   for (uint32_t _ = 0; _ < num_iterations; ++_) {
-    if ((query_result = cudaStreamQuery(stream)) != expected) {
+    if ((query_result = hipStreamQuery(stream)) != expected) {
       std::this_thread::sleep_for(std::chrono::milliseconds{5});
     } else {
       break;
@@ -392,11 +400,11 @@ void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iteratio
   REQUIRE(expected == query_result);
 }
 
-cudaExternalSemaphore_t ImportBinarySemaphore(VulkanTest& vkt) {
+hipExternalSemaphore_t ImportBinarySemaphore(VulkanTest& vkt) {
   const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_BINARY);
   const auto sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_BINARY);
-  cudaExternalSemaphore_t cuda_ext_semaphore;
-  E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &sem_handle_desc));
+  hipExternalSemaphore_t hip_ext_semaphore;
+  HIP_CHECK(hipImportExternalSemaphore(&hip_ext_semaphore, &sem_handle_desc));
 
-  return cuda_ext_semaphore;
+  return hip_ext_semaphore;
 }

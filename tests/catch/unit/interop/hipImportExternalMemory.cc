@@ -27,34 +27,34 @@ TEST_CASE("Unit_hipImportExternalMemory_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
   const auto storage = vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
   auto desc = vkt.BuildMemoryDescriptor(storage.memory, sizeof(*storage.host_ptr));
-  cudaExternalMemory_t ext_memory;
+  hipExternalMemory_t ext_memory;
 
   SECTION("extMem_out == nullptr") {
-    REQUIRE(cudaImportExternalMemory(nullptr, &desc) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipImportExternalMemory(nullptr, &desc), hipErrorInvalidValue);
   }
 
   SECTION("memHandleDesc == nullptr") {
-    REQUIRE(cudaImportExternalMemory(&ext_memory, nullptr) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipImportExternalMemory(&ext_memory, nullptr), hipErrorInvalidValue);
   }
 
   SECTION("memHandleDesc.size == 0") {
     desc.size = 0;
-    REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipImportExternalMemory(&ext_memory, &desc), hipErrorInvalidValue);
   }
 
   SECTION("Invalid memHandleDesc.flags") {
-    desc.flags = cudaExternalMemoryDedicated + 1;
-    REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
+    desc.flags = 2;
+    HIP_CHECK_ERROR(hipImportExternalMemory(&ext_memory, &desc), hipErrorInvalidValue);
   }
 
   SECTION("Invalid memHandleDesc.type") {
-    desc.type = static_cast<cudaExternalMemoryHandleType>(-1);
-    REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
+    desc.type = static_cast<hipExternalMemoryHandleType>(-1);
+    HIP_CHECK_ERROR(hipImportExternalMemory(&ext_memory, &desc), hipErrorInvalidValue);
   }
 
-  // TODO Uncomment and disable this for Linux in the JSON file
-  //   SECTION("memHandleDesc.handle == NULL") {
-  //     desc.handle.win32.handle = NULL;
-  //     REQUIRE(cudaImportExternalMemory(&ext_memory, &desc) == cudaErrorInvalidValue);
-  //   }
+  // // TODO Uncomment and disable this for Linux in the JSON file
+  SECTION("memHandleDesc.handle == NULL") {
+    desc.handle.win32.handle = NULL;
+    HIP_CHECK_ERROR(hipImportExternalMemory(&ext_memory, &desc), hipErrorInvalidValue);
+  }
 }

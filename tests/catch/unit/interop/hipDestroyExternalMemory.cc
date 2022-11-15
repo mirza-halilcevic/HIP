@@ -25,19 +25,18 @@ constexpr bool enable_validation = false;
 
 TEST_CASE("Unit_hipDestroyExternalMemory_Vulkan_Negative_Parameters") {
   SECTION("extMem == nullptr") {
-    REQUIRE(cudaDestroyExternalMemory(nullptr) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipDestroyExternalMemory(nullptr), hipErrorInvalidValue);
   }
 
-  // Segfaults in cuda
-  //   SECTION("Double free") {
-  //     VulkanTest vkt(enable_validation);
-  //     const auto [vk_memory, b, p] =
-  //         vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
-  //     auto desc = vkt.BuildMemoryDescriptor(vk_memory, sizeof(*p));
-  //     cudaExternalMemory_t ext_memory;
-  //     E(cudaImportExternalMemory(&ext_memory, &desc));
+  // Segfaults in CUDA
+  SECTION("Double free") {
+    VulkanTest vkt(enable_validation);
+    const auto storage = vkt.CreateMappedStorage<int>(1, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+    auto desc = vkt.BuildMemoryDescriptor(storage.memory, sizeof(*storage.host_ptr));
+    hipExternalMemory_t ext_memory;
+    HIP_CHECK(hipImportExternalMemory(&ext_memory, &desc));
 
-  //     E(cudaDestroyExternalMemory(ext_memory));
-  //     REQUIRE(cudaDestroyExternalMemory(ext_memory) == cudaErrorInvalidValue);
-  //   }
+    HIP_CHECK(hipDestroyExternalMemory(ext_memory));
+    HIP_CHECK_ERROR(hipDestroyExternalMemory(ext_memory), hipErrorInvalidValue);
+  }
 }

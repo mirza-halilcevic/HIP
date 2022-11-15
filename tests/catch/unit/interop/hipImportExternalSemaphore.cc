@@ -25,31 +25,32 @@ constexpr bool enable_validation = false;
 
 TEST_CASE("Unit_hipImportExternalSemaphore_Vulkan_Negative_Parameters") {
   VulkanTest vkt(enable_validation);
-  const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
-  auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_TIMELINE);
-  cudaExternalSemaphore_t ext_semaphore;
+  const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_BINARY);
+  auto handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_BINARY);
+  hipExternalSemaphore_t ext_semaphore;
 
   SECTION("extSem_out == nullptr") {
-    REQUIRE(cudaImportExternalSemaphore(nullptr, &handle_desc) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipImportExternalSemaphore(nullptr, &handle_desc), hipErrorInvalidValue);
   }
 
   SECTION("semHandleDesc == nullptr") {
-    REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, nullptr) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipImportExternalSemaphore(&ext_semaphore, nullptr), hipErrorInvalidValue);
   }
 
   SECTION("semHandleDesc.flags != 0") {
     handle_desc.flags = 1;
-    REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipImportExternalSemaphore(&ext_semaphore, &handle_desc), hipErrorInvalidValue);
   }
 
   SECTION("Invalid semHandleDesc.type") {
-    handle_desc.type = static_cast<cudaExternalSemaphoreHandleType>(-1);
-    REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
+    handle_desc.type = static_cast<hipExternalSemaphoreHandleType>(-1);
+    HIP_CHECK_ERROR(hipImportExternalSemaphore(&ext_semaphore, &handle_desc), hipErrorInvalidValue);
   }
 
   // TODO Uncomment and disable this for Linux in the JSON file
   // SECTION("semHandleDesc.handle == NULL") {
   //   handle_desc.handle.win32.handle = NULL;
-  //   REQUIRE(cudaImportExternalSemaphore(&ext_semaphore, &handle_desc) == cudaErrorInvalidValue);
+  //   HIP_CHECK_ERROR(hipImportExternalSemaphore(&ext_semaphore, &handle_desc),
+  //   hipErrorInvalidValue);
   // }
 }

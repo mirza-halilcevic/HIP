@@ -25,14 +25,14 @@ constexpr bool enable_validation = false;
 
 TEST_CASE("Unit_hipDestroyExternalSemaphore_Vulkan_Negative_Parameters") {
   SECTION("extSem == nullptr") {
-    REQUIRE(cudaDestroyExternalSemaphore(nullptr) == cudaErrorInvalidValue);
+    HIP_CHECK_ERROR(hipDestroyExternalSemaphore(nullptr), hipErrorInvalidValue);
   }
 
   // Segfaults in CUDA
-  // SECTION("Double free") {
-  //   VulkanTest vkt(enable_validation);
-  //   const auto ext_semaphore = ImportTimelineSemaphore(vkt);
-  //   E(cudaDestroyExternalSemaphore(ext_semaphore));
-  //   REQUIRE(cudaDestroyExternalSemaphore(ext_semaphore) == cudaErrorInvalidValue);
-  // }
+  SECTION("Double free") {
+    VulkanTest vkt(enable_validation);
+    const auto ext_semaphore = ImportBinarySemaphore(vkt);
+    HIP_CHECK(hipDestroyExternalSemaphore(ext_semaphore));
+    HIP_CHECK_ERROR(hipDestroyExternalSemaphore(ext_semaphore), hipErrorInvalidValue);
+  }
 }

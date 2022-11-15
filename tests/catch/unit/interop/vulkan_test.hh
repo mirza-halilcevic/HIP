@@ -21,7 +21,6 @@ THE SOFTWARE.
 
 #pragma once
 
-#include <cuda.h>
 #include <vulkan/vulkan.h>
 #include <vector>
 
@@ -32,18 +31,14 @@ THE SOFTWARE.
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 
-#define E(expr)                                                                                    \
-  {                                                                                                \
-    cudaError_t err = (expr);                                                                      \
-    UNSCOPED_INFO("Cuda error: " << cudaGetErrorString(err));                                      \
-    REQUIRE(cudaSuccess == err);                                                                   \
-  }
-
 #define VK_CHECK_RESULT(code)                                                                      \
   {                                                                                                \
     VkResult res = (code);                                                                         \
-    UNSCOPED_INFO("Vulkan error: " << std::to_string(res));                                        \
-    REQUIRE(VK_SUCCESS == res);                                                                    \
+    if (res != VK_SUCCESS) {                                                                       \
+      INFO("Vulkan error: " << std::to_string(res) << "\n In File: " << __FILE__                   \
+                            << "\n At line: " << __LINE__);                                        \
+      REQUIRE(false);                                                                              \
+    }                                                                                              \
   }
 
 class VulkanTest {
@@ -101,10 +96,10 @@ class VulkanTest {
 
   VkSemaphore CreateExternalSemaphore(VkSemaphoreType sem_type, uint64_t initial_value = 0);
 
-  cudaExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(VkSemaphore vk_sem,
-                                                           VkSemaphoreType sem_type);
+  hipExternalSemaphoreHandleDesc BuildSemaphoreDescriptor(VkSemaphore vk_sem,
+                                                          VkSemaphoreType sem_type);
 
-  cudaExternalMemoryHandleDesc BuildMemoryDescriptor(VkDeviceMemory vk_mem, uint32_t size);
+  hipExternalMemoryHandleDesc BuildMemoryDescriptor(VkDeviceMemory vk_mem, uint32_t size);
 
 
   VkDevice GetDevice() const { return _device; }
@@ -130,9 +125,9 @@ class VulkanTest {
 
   uint32_t FindMemoryType(uint32_t memory_type_bits, VkMemoryPropertyFlags properties);
 
-  cudaExternalSemaphoreHandleType VulkanSemHandleTypeToCudaHandleType(VkSemaphoreType sem_type);
+  hipExternalSemaphoreHandleType VulkanSemHandleTypeToHIPHandleType(VkSemaphoreType sem_type);
 
-  cudaExternalMemoryHandleType VulkanMemHandleTypeToCudaHandleType();
+  hipExternalMemoryHandleType VulkanMemHandleTypeToHIPHandleType();
 
 #ifdef _WIN64
   HANDLE
@@ -179,10 +174,17 @@ class VulkanTest {
       VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
       VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
       VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME};
+#ifdef _WIN64
+  std::vector<const char*> _required_device_extensions{
+      VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME,
+      VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME};
+#else
   std::vector<const char*> _required_device_extensions{
       VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
       VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};
+#endif
 };
+
 
 template <typename T>
 VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
@@ -254,6 +256,6 @@ VulkanTest::MappedBuffer<T> VulkanTest::CreateMappedStorage(uint32_t count,
 }
 
 // Sometimes in CUDA the stream is not immediately ready after a semaphore has been signaled
-void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iterations = 5);
+void PollStream(hipStream_t stream, hipError_t expected, uint32_t num_iterations = 5);
 
-cudaExternalSemaphore_t ImportBinarySemaphore(VulkanTest& vkt);
+hipExternalSemaphore_t ImportBinarySemaphore(VulkanTest& vkt);

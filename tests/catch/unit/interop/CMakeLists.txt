@@ -1,9 +1,11 @@
+find_package(hip REQUIRED)
+
 set(TEST_SRC
     vulkan_test.cc
     hipImportExternalSemaphore.cc
-    hipDestroyExternalSemaphore.cc
     hipWaitExternalSemaphoresAsync.cc
     hipSignalExternalSemaphoresAsync.cc
+    hipDestroyExternalSemaphore.cc
     hipImportExternalMemory.cc
     hipExternalMemoryGetMappedBuffer.cc
     hipDestroyExternalMemory.cc
