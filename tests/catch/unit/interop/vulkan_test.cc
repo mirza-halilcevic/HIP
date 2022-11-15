@@ -392,9 +392,9 @@ void PollStream(cudaStream_t stream, cudaError_t expected, uint32_t num_iteratio
   REQUIRE(expected == query_result);
 }
 
-cudaExternalSemaphore_t ImportTimelineSemaphore(VulkanTest& vkt) {
-  const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_TIMELINE);
-  const auto sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_TIMELINE);
+cudaExternalSemaphore_t ImportBinarySemaphore(VulkanTest& vkt) {
+  const auto semaphore = vkt.CreateExternalSemaphore(VK_SEMAPHORE_TYPE_BINARY);
+  const auto sem_handle_desc = vkt.BuildSemaphoreDescriptor(semaphore, VK_SEMAPHORE_TYPE_BINARY);
   cudaExternalSemaphore_t cuda_ext_semaphore;
   E(cudaImportExternalSemaphore(&cuda_ext_semaphore, &sem_handle_desc));
 
