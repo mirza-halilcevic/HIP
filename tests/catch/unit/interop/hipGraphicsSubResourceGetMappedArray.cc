@@ -25,12 +25,10 @@ THE SOFTWARE.
 
 #include "interop_common.hh"
 
-#include "GLContextScopeGuard.hh"
-
 TEST_CASE("Unit_hipGraphicsSubResourceGetMappedArray_Positive_Basic") {
   GLContextScopeGuard gl_context;
 
-  CreateGLImageObject();
+  GLImageObject tex;
 
   cudaGraphicsResource* tex_resource;
 
@@ -52,7 +50,7 @@ TEST_CASE("Unit_hipGraphicsSubResourceGetMappedArray_Positive_Basic") {
 TEST_CASE("Unit_hipGraphicsSubResourceGetMappedArray_Negative_Parameters") {
   GLContextScopeGuard gl_context;
 
-  CreateGLImageObject();
+  GLImageObject tex;
 
   cudaGraphicsResource* tex_resource;
 
@@ -67,10 +65,64 @@ TEST_CASE("Unit_hipGraphicsSubResourceGetMappedArray_Negative_Parameters") {
     REQUIRE(cudaGraphicsSubResourceGetMappedArray(nullptr, tex_resource, 0, 0) == CUDA_SUCCESS);
   }
 
-  SECTION("invalid resource") {
-    cudaGraphicsResource* invalid_resource;
-    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, invalid_resource, 0, 0) ==
-            CUDA_ERROR_INVALID_CONTEXT);
+  SECTION("non-texture resource") {
+    GLBufferObject vbo;
+    cudaGraphicsResource* vbo_resource;
+
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&vbo_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
+            CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsMapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
+
+    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, vbo_resource, 0, 0) ==
+            CUDA_ERROR_NOT_MAPPED_AS_ARRAY);
+
+    REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_SUCCESS);
+  }
+
+  SECTION("unregistered resource") {
+    cudaGraphicsResource* unregistered_resource;
+    REQUIRE(cudaGraphicsGLRegisterImage(&unregistered_resource, tex, GL_TEXTURE_2D,
+                                        cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(unregistered_resource) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, unregistered_resource, 0, 0) ==
+            CUDA_ERROR_CONTEXT_IS_DESTROYED);
+  }
+
+  SECTION("not mapped resource") {
+    cudaGraphicsResource* not_mapped_resource;
+    REQUIRE(cudaGraphicsGLRegisterImage(&not_mapped_resource, tex, GL_TEXTURE_2D,
+                                        cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, not_mapped_resource, 0, 0) ==
+            CUDA_ERROR_NOT_MAPPED);
+    REQUIRE(cudaGraphicsUnregisterResource(not_mapped_resource) == CUDA_SUCCESS);
+  }
+
+  SECTION("unmapped resource") {
+    cudaGraphicsResource* unmapped_resource;
+
+    REQUIRE(cudaGraphicsGLRegisterImage(&unmapped_resource, tex, GL_TEXTURE_2D,
+                                        cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+
+    REQUIRE(cudaGraphicsMapResources(1, &unmapped_resource, 0) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnmapResources(1, &unmapped_resource, 0) == CUDA_SUCCESS);
+
+    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, unmapped_resource, 0, 0) ==
+            CUDA_ERROR_NOT_MAPPED);
+
+    REQUIRE(cudaGraphicsUnregisterResource(unmapped_resource) == CUDA_SUCCESS);
+  }
+
+  SECTION("invalid arrayIndex") {
+    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, tex_resource,
+                                                  std::numeric_limits<int>::max(),
+                                                  0) == CUDA_ERROR_INVALID_VALUE);
+  }
+
+  SECTION("invalid mipLevel") {
+    REQUIRE(cudaGraphicsSubResourceGetMappedArray(&image_devptr, tex_resource, 0,
+                                                  std::numeric_limits<int>::max()) ==
+            CUDA_ERROR_INVALID_VALUE);
   }
 
   REQUIRE(cudaGraphicsUnmapResources(1, &tex_resource, 0) == CUDA_SUCCESS);

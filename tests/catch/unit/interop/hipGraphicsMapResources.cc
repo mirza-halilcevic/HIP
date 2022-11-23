@@ -25,13 +25,11 @@ THE SOFTWARE.
 
 #include "interop_common.hh"
 
-#include "GLContextScopeGuard.hh"
-
 TEST_CASE("Unit_hipGraphicsMapResources_Positive_Basic") {
   GLContextScopeGuard gl_context;
 
-  CreateGLBufferObject();
-  CreateGLImageObject();
+  GLBufferObject vbo;
+  GLImageObject tex;
 
   std::array<cudaGraphicsResource_t, 2> resources;
 
@@ -56,7 +54,7 @@ TEST_CASE("Unit_hipGraphicsMapResources_Positive_Basic") {
 TEST_CASE("Unit_hipGraphicsMapResources_Negative_Parameters") {
   GLContextScopeGuard gl_context;
 
-  CreateGLBufferObject();
+  GLBufferObject vbo;
 
   cudaGraphicsResource* vbo_resource;
 
@@ -67,16 +65,15 @@ TEST_CASE("Unit_hipGraphicsMapResources_Negative_Parameters") {
     REQUIRE(cudaGraphicsMapResources(0, &vbo_resource, 0) == CUDA_ERROR_INVALID_VALUE);
   }
 
-  SECTION("count < 0") {
-    REQUIRE(cudaGraphicsMapResources(-1, &vbo_resource, 0) == CUDA_ERROR_INVALID_HANDLE);
-  }
-
   SECTION("resources == nullptr") {
     REQUIRE(cudaGraphicsMapResources(1, nullptr, 0) == CUDA_ERROR_INVALID_VALUE);
   }
 
-  SECTION("non-registered resource") {
+  SECTION("unregistered resource") {
     cudaGraphicsResource* unregistered_resource;
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&unregistered_resource, vbo,
+                                         cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(unregistered_resource) == CUDA_SUCCESS);
     REQUIRE(cudaGraphicsMapResources(1, &unregistered_resource, 0) == CUDA_ERROR_INVALID_HANDLE);
   }
 
@@ -88,7 +85,9 @@ TEST_CASE("Unit_hipGraphicsMapResources_Negative_Parameters") {
 
   SECTION("invalid stream") {
     cudaStream_t stream;
-    REQUIRE(cudaGraphicsMapResources(1, &vbo_resource, stream) == CUDA_ERROR_INVALID_CONTEXT);
+    cudaStreamCreate(&stream);
+    cudaStreamDestroy(stream);
+    REQUIRE(cudaGraphicsMapResources(1, &vbo_resource, stream) == CUDA_ERROR_CONTEXT_IS_DESTROYED);
   }
 
   REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_SUCCESS);

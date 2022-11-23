@@ -20,12 +20,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+
 #include <hip_test_common.hh>
 #include <hip/hip_runtime_api.h>
 
 #include "interop_common.hh"
-
-#include "GLContextScopeGuard.hh"
 
 namespace {
 constexpr std::array<cudaGLDeviceList, 3> kDeviceLists{

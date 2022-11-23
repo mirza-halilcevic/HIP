@@ -25,34 +25,10 @@ THE SOFTWARE.
 
 #include "interop_common.hh"
 
-#include "GLContextScopeGuard.hh"
-
-TEST_CASE("Unit_hipGraphicsUnmapResources_Positive_Different_Streams") {
-  GLContextScopeGuard gl_context;
-
-  CreateGLBufferObject();
-
-  cudaGraphicsResource* vbo_resource;
-
-  REQUIRE(cudaGraphicsGLRegisterBuffer(&vbo_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
-          CUDA_SUCCESS);
-
-  REQUIRE(cudaGraphicsMapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
-
-  cudaStream_t stream;
-  REQUIRE(cudaStreamCreate(&stream) == CUDA_SUCCESS);
-  REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, stream) == CUDA_ERROR_NOT_MAPPED);
-  REQUIRE(cudaStreamDestroy(stream) == CUDA_SUCCESS);
-
-  REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
-
-  REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_SUCCESS);
-}
-
 TEST_CASE("Unit_hipGraphicsUnmapResources_Negative_Parameters") {
   GLContextScopeGuard gl_context;
 
-  CreateGLBufferObject();
+  GLBufferObject vbo;
 
   cudaGraphicsResource* vbo_resource;
 
@@ -65,32 +41,24 @@ TEST_CASE("Unit_hipGraphicsUnmapResources_Negative_Parameters") {
     REQUIRE(cudaGraphicsUnmapResources(0, &vbo_resource, 0) == CUDA_ERROR_INVALID_VALUE);
   }
 
-  SECTION("count < 0") {
-    REQUIRE(cudaGraphicsUnmapResources(-1, &vbo_resource, 0) == CUDA_ERROR_INVALID_HANDLE);
-  }
-
   SECTION("resources == nullptr") {
     REQUIRE(cudaGraphicsUnmapResources(1, nullptr, 0) == CUDA_ERROR_INVALID_VALUE);
   }
 
-  SECTION("non-registered resource") {
-    cudaGraphicsResource* unregistered_resource;
-    REQUIRE(cudaGraphicsUnmapResources(1, &unregistered_resource, 0) == CUDA_ERROR_INVALID_HANDLE);
+  SECTION("not mapped resource") {
+    cudaGraphicsResource* not_mapped_resource;
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&not_mapped_resource, vbo,
+                                         cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnmapResources(1, &not_mapped_resource, 0) == CUDA_ERROR_NOT_MAPPED);
+    REQUIRE(cudaGraphicsUnregisterResource(not_mapped_resource) == CUDA_SUCCESS);
   }
 
-  SECTION("non-mapped resource") {
-    cudaGraphicsResource* unmapped_resource;
-    REQUIRE(cudaGraphicsGLRegisterBuffer(&unmapped_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
-            CUDA_SUCCESS);
-    REQUIRE(cudaGraphicsUnmapResources(1, &unmapped_resource, 0) == CUDA_ERROR_NOT_MAPPED);
-    REQUIRE(cudaGraphicsUnregisterResource(unmapped_resource) == CUDA_SUCCESS);
-  }
-
-  SECTION("different stream") {
+  SECTION("invalid stream") {
     cudaStream_t stream;
-    REQUIRE(cudaStreamCreate(&stream) == CUDA_SUCCESS);
-    REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, stream) == CUDA_ERROR_NOT_MAPPED);
-    REQUIRE(cudaStreamDestroy(stream) == CUDA_SUCCESS);
+    cudaStreamCreate(&stream);
+    cudaStreamDestroy(stream);
+    REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, stream) ==
+            CUDA_ERROR_CONTEXT_IS_DESTROYED);
   }
 
   REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);

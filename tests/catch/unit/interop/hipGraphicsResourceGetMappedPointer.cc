@@ -25,12 +25,10 @@ THE SOFTWARE.
 
 #include "interop_common.hh"
 
-#include "GLContextScopeGuard.hh"
-
 TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Positive_Basic") {
   GLContextScopeGuard gl_context;
 
-  CreateGLBufferObject();
+  GLBufferObject vbo;
 
   cudaGraphicsResource* vbo_resource;
 
@@ -46,7 +44,7 @@ TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Positive_Basic") {
                                                vbo_resource) == CUDA_SUCCESS);
 
   REQUIRE(buffer_devptr != nullptr);
-  REQUIRE(size == kWidth * kHeight * 4 * sizeof(float));
+  REQUIRE(size == vbo.kSize);
 
   REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
 
@@ -56,7 +54,7 @@ TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Positive_Basic") {
 TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Positive_Parameters") {
   GLContextScopeGuard gl_context;
 
-  CreateGLBufferObject();
+  GLBufferObject vbo;
 
   cudaGraphicsResource* vbo_resource;
 
@@ -70,7 +68,7 @@ TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Positive_Parameters") {
 
   SECTION("devPtr == nullptr") {
     REQUIRE(cudaGraphicsResourceGetMappedPointer(nullptr, &size, vbo_resource) == CUDA_SUCCESS);
-    REQUIRE(size == kWidth * kHeight * 4 * sizeof(float));
+    REQUIRE(size == vbo.kSize);
   }
 
   SECTION("size == nullptr") {
@@ -87,14 +85,68 @@ TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Positive_Parameters") {
 TEST_CASE("Unit_hipGraphicsResourceGetMappedPointer_Negative_Parameters") {
   GLContextScopeGuard gl_context;
 
-  cudaFree(0);
+  GLBufferObject vbo;
+
+  cudaGraphicsResource* vbo_resource;
+
+  REQUIRE(cudaGraphicsGLRegisterBuffer(&vbo_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
+          CUDA_SUCCESS);
+
+  REQUIRE(cudaGraphicsMapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
 
   float* buffer_devptr = nullptr;
   size_t size = 0;
 
-  SECTION("invalid resource") {
-    cudaGraphicsResource* invalid_resource;
+  SECTION("non-pointer resource") {
+    GLImageObject tex;
+    cudaGraphicsResource* tex_resource;
+
+    REQUIRE(cudaGraphicsGLRegisterImage(&tex_resource, tex, GL_TEXTURE_2D,
+                                        cudaGraphicsMapFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsMapResources(1, &tex_resource, 0) == CUDA_SUCCESS);
+
     REQUIRE(cudaGraphicsResourceGetMappedPointer(reinterpret_cast<void**>(&buffer_devptr), &size,
-                                                 invalid_resource) == CUDA_ERROR_INVALID_HANDLE);
+                                                 tex_resource) == CUDA_ERROR_NOT_MAPPED_AS_POINTER);
+
+    REQUIRE(cudaGraphicsUnmapResources(1, &tex_resource, 0) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(tex_resource) == CUDA_SUCCESS);
   }
+
+  SECTION("unregistered resource") {
+    cudaGraphicsResource* unregistered_resource;
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&unregistered_resource, vbo,
+                                         cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(unregistered_resource) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsResourceGetMappedPointer(reinterpret_cast<void**>(&buffer_devptr), &size,
+                                                 unregistered_resource) ==
+            CUDA_ERROR_CONTEXT_IS_DESTROYED);
+  }
+
+  SECTION("not mapped resource") {
+    cudaGraphicsResource* not_mapped_resource;
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&not_mapped_resource, vbo,
+                                         cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsResourceGetMappedPointer(reinterpret_cast<void**>(&buffer_devptr), &size,
+                                                 not_mapped_resource) == CUDA_ERROR_NOT_MAPPED);
+    REQUIRE(cudaGraphicsUnregisterResource(not_mapped_resource) == CUDA_SUCCESS);
+  }
+
+  SECTION("unmapped resource") {
+    cudaGraphicsResource* unmapped_resource;
+
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&unmapped_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
+            CUDA_SUCCESS);
+
+    REQUIRE(cudaGraphicsMapResources(1, &unmapped_resource, 0) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnmapResources(1, &unmapped_resource, 0) == CUDA_SUCCESS);
+
+    REQUIRE(cudaGraphicsResourceGetMappedPointer(reinterpret_cast<void**>(&buffer_devptr), &size,
+                                                 unmapped_resource) == CUDA_ERROR_NOT_MAPPED);
+
+    REQUIRE(cudaGraphicsUnregisterResource(unmapped_resource) == CUDA_SUCCESS);
+  }
+
+  REQUIRE(cudaGraphicsUnmapResources(1, &vbo_resource, 0) == CUDA_SUCCESS);
+
+  REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_SUCCESS);
 }

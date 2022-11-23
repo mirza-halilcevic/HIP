@@ -25,8 +25,6 @@ THE SOFTWARE.
 
 #include "interop_common.hh"
 
-#include "GLContextScopeGuard.hh"
-
 namespace {
 constexpr std::array<unsigned int, 5> kFlags{
     cudaGraphicsMapFlagsNone, cudaGraphicsMapFlagsReadOnly, cudaGraphicsMapFlagsWriteDiscard,
@@ -38,7 +36,7 @@ TEST_CASE("Unit_hipGraphicsGLRegisterImage_Positive_Basic") {
 
   const auto flags = GENERATE(from_range(begin(kFlags), end(kFlags)));
 
-  CreateGLImageObject();
+  GLImageObject tex;
 
   cudaGraphicsResource* tex_resource;
 
@@ -50,7 +48,7 @@ TEST_CASE("Unit_hipGraphicsGLRegisterImage_Positive_Basic") {
 TEST_CASE("Unit_hipGraphicsGLRegisterImage_Positive_Register_Twice") {
   GLContextScopeGuard gl_context;
 
-  CreateGLImageObject();
+  GLImageObject tex;
 
   cudaGraphicsResource *tex_resource_1, *tex_resource_2;
 
@@ -66,7 +64,7 @@ TEST_CASE("Unit_hipGraphicsGLRegisterImage_Positive_Register_Twice") {
 TEST_CASE("Unit_hipGraphicsGLRegisterImage_Negative_Parameters") {
   GLContextScopeGuard gl_context;
 
-  CreateGLImageObject();
+  GLImageObject tex;
 
   cudaGraphicsResource* tex_resource;
 
@@ -92,6 +90,7 @@ TEST_CASE("Unit_hipGraphicsGLRegisterImage_Negative_Parameters") {
 
   SECTION("invalid flags") {
     REQUIRE(cudaGraphicsGLRegisterImage(&tex_resource, tex, GL_TEXTURE_2D,
-                                        static_cast<unsigned int>(-1)) == CUDA_ERROR_INVALID_VALUE);
+                                        std::numeric_limits<unsigned int>::max()) ==
+            CUDA_ERROR_INVALID_VALUE);
   }
 }

@@ -25,21 +25,27 @@ THE SOFTWARE.
 
 #include "interop_common.hh"
 
-#include "GLContextScopeGuard.hh"
-
-TEST_CASE("Unit_hipGraphicsUnregisterResource_Negative_Basic") {
+TEST_CASE("Unit_hipGraphicsUnregisterResource_Negative_Parameters") {
   GLContextScopeGuard gl_context;
 
-  cudaGraphicsResource* vbo_resource;
+  GLBufferObject vbo;
 
-  REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_ERROR_INVALID_HANDLE);
+  SECTION("already unregistered resource") {
+    cudaGraphicsResource* unregistered_resource;
 
-  CreateGLBufferObject();
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&unregistered_resource, vbo,
+                                         cudaGraphicsRegisterFlagsNone) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(unregistered_resource) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(unregistered_resource) ==
+            CUDA_ERROR_CONTEXT_IS_DESTROYED);
+  }
 
-  REQUIRE(cudaGraphicsGLRegisterBuffer(&vbo_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
-          CUDA_SUCCESS);
+  SECTION("mapped resource") {
+    cudaGraphicsResource* mapped_resource;
 
-  REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_SUCCESS);
-
-  REQUIRE(cudaGraphicsUnregisterResource(vbo_resource) == CUDA_ERROR_CONTEXT_IS_DESTROYED);
+    REQUIRE(cudaGraphicsGLRegisterBuffer(&mapped_resource, vbo, cudaGraphicsRegisterFlagsNone) ==
+            CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsMapResources(1, &mapped_resource, 0) == CUDA_SUCCESS);
+    REQUIRE(cudaGraphicsUnregisterResource(mapped_resource) == CUDA_ERROR_ALREADY_MAPPED);
+  }
 }
